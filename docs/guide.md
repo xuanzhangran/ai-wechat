@@ -1,0 +1,26 @@
+# 使用指南
+
+## 安装bun
+
+```bash
+npm install bun -g
+```
+
+### 安装baoyu-skills
+
+```bash
+npx skills add jimliu/baoyu-skills -y
+```
+
+### 根目录下创建
+往 `.baoyu-skills/.env` 写入所需的密钥（选配，用的到才配）：
+
+| 提供商 | 环境变量 | 获取地址 |
+|--------|---------|---------|
+| Google Gemini | `GOOGLE_API_KEY` | [aistudio.google.com/api-keys](https://aistudio.google.com/api-keys) |
+| OpenAI | `OPENAI_API_KEY` | platform.openai.com |
+| DashScope（通义万象） | `DASHSCOPE_API_KEY` | dashscope.aliyun.com |
+| Jimeng（即梦） | `JIMENG_API_KEY` | jimeng.jianying.com |
+| Seedream（豆包/火山引擎） | `ARK_API_KEY` | console.volcengine.com |
+| Replicate | `REPLICATE_API_TOKEN` | replicate.com |
+| OpenRouter | `OPENROUTER_API_KEY` | openrouter.ai |
