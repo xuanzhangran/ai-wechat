@@ -3,7 +3,10 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "baoyu-chrome-cdp": "file:./vendor/baoyu-chrome-cdp",
-    "baoyu-md": "file:./vendor/baoyu-md"
+    "@jsquash/webp": "^1.5.0",
+    "baoyu-chrome-cdp": "^0.1.1",
+    "baoyu-md": "^0.1.1",
+    "jimp": "^1.6.0",
+    "socks": "^2.8.9"
   }
 }
