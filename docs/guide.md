@@ -1,12 +1,15 @@
 # 使用指南
 
-## 安装bun
+## 安装工具
 
 ```bash
 npm install bun -g
+npm install -g @anthropic-ai/claude-code
+npm install -g @openai/codex
+npm install -g opencode-ai
 ```
 
-### 安装baoyu-skills
+### 安装技能
 
 ```bash
 npx skills add jimliu/baoyu-skills -y
