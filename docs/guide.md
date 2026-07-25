@@ -13,6 +13,7 @@ npm install -g opencode-ai
 
 ```bash
 npx skills add jimliu/baoyu-skills -y
+npx skills add https://github.com/xiangyu-cas/xiaohongshu-ops-skill --skill xiaohongshu-ops
 ```
 
 ### 根目录下创建
@@ -27,3 +28,8 @@ npx skills add jimliu/baoyu-skills -y
 | Seedream（豆包/火山引擎） | `ARK_API_KEY` | console.volcengine.com |
 | Replicate | `REPLICATE_API_TOKEN` | replicate.com |
 | OpenRouter | `OPENROUTER_API_KEY` | openrouter.ai |
+
+## 参考资料
+https://www.skills.sh/autoclaw-cc/xiaohongshu-skills/xiaohongshu-skills
+https://www.skills.sh/white0dew/xiaohongshuskills/redbookskills
+https://www.skills.sh/xiangyu-cas/xiaohongshu-ops-skill/xiaohongshu-ops
