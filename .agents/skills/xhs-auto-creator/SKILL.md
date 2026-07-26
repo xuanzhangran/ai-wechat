@@ -1,22 +1,215 @@
 ---
 name: xhs-auto-creator
-description: "小红书自动创建图文编排器"
+description: "小红书自动图文编排器 — 从一句话选题到发布小红书的全自动流水线"
 ---
 
-# 小红书自动创建图文编排器
+# 小红书自动图文编排器
 
 ## 描述
-本技能用于调度用小红书图文生成的编排器。本技能不直接处理小红书图片生成，而是按顺序调用以下子技能：
+本技能是小红书笔记的全自动编排器。它不直接处理图片生成或发布，而是**编排整个流水线**：从用户的一句话选题/描述出发，调用本项目已有的子技能，逐步产出图文并茂的小红书笔记并发布。
+
+## 工作流全景
+
+```
+用户输入 "写一篇关于XXX的小红书笔记"
+  │
+  ├─ Step 1: 解析输入 → 确定 topic-slug + 模式
+  ├─ Step 2: 写稿 → 生成完整的小红书文案（--fast 模式跳过）
+  ├─ Step 3: 确认 → 用户确认文案 + 图片方案（--publish/--dry-run 跳过）
+  ├─ Step 4: 出图 → baoyu-xhs-images 生成图片卡片
+  ├─ Step 5: 压缩 → baoyu-compress-image 压缩至 WebP
+  ├─ Step 6: 结构化输出 → summary.md
+  └─ Step 7: 发布 → xiaohongshu-ops 发布到小红书（--dry-run 跳过）
+```
 
 ## 输出目录
-所有生成产物统一放在项目根目录的 `image-cards/{topic-slug}/` 下。
+所有产物统一放在 `image-cards/{topic-slug}/` 目录下：
+```
+image-cards/{topic-slug}/
+├── source.md               ← 用户原始输入
+├── analysis.md             ← 内容分析
+├── outline.md              ← 出图大纲
+├── summary.md              ← 结构化发布文案
+├── prompts/                ← 每张图的 prompt 文件
+├── compress/               ← 压缩后的 WebP 图片
+└── {NN}-{type}-{slug}.png  ← 原始图片
+```
+
+## 参数说明
+| 调用方式 | 示例 |
+|---------|------|
+| 位置参数 | `/xhs-auto-creator 写一篇关于幻觉震动的小红书笔记` |
+| `--prompt` | `/xhs-auto-creator --prompt "写一篇关于..."` |
+| `--publish` | 跳过确认直接发布 |
+| `--dry-run` | 仅生成不发布 |
+| `--style` | 指定图片风格 (cute/fresh/warm/bold/notion...) |
+| `--fast` | 跳过写稿步骤，直接用用户描述出图 |
+
+## 依赖的子技能（按调用顺序）
+- `baoyu-xhs-images` — 小红书图片卡片生成（含 style/layout/palette 控制）
+- `baoyu-compress-image` — 图片压缩（PNG → WebP）
+- `xiaohongshu-ops` — 结构化输出 + 小红书发布
 
 ## 工作流程
-1. 第一步：调用 `baoyu-xhs-images` 技能，传入用户提供的提示词`prompt`和图片质量参数`--quality normal`参数，产出目录为 `image-cards/{topic-slug}/`。
-2. 第二步：调用 `baoyu-compress-image` 技能，传入上一步生成的图片路径，对所有图片进行压缩，尽量保持图片质量和格式不变（注意：如果第一步生成的图片是png格式，则将图片压缩成webp格式，如果是其他图片格式，则保持压格式不变），压缩比例为`--quality 80`参数，然后将压缩后的图片保存到 `image-cards/{topic-slug}/compress/` 目录下，并返回图片路径。
-3. 第三步：调用 `xiaohongshu-ops` 技能，传入上一步压缩图片的路径，将压缩后的图片发布到小红书。
 
-## 依赖的子技能
-- baoyu-xhs-images
-- baoyu-compress-image
-- xiaohongshu-ops
+### Step 1: 解析输入
+
+从用户消息中提取以下内容：
+
+| 来源 | 提取方式 |
+|------|---------|
+| `--prompt "..."` | 取 `--prompt` 后面的全部内容 |
+| 位置参数 | 取第一个非选项字符串参数 |
+| `{topic-slug}` | 从主题生成 2-4 词 kebab-case slug（中文翻译成英文） |
+| `--publish` | 标记为自动发布（跳过发布确认） |
+| `--dry-run` | 标记为仅生成不发布 |
+| `--style` | 指定 baoyu-xhs-images 的图片风格 |
+| `--fast` | 跳过写稿步骤，直接用用户描述出图 |
+
+### Step 2: 写稿（`--fast` 模式跳过）
+
+根据用户输入的选题描述，生成完整的小红书笔记文案：
+
+**产出内容**：
+1. **标题**（3-5 个备选，≤20 字优先）
+2. **开头钩子**（1-2 句，制造停留）
+3. **正文**（3 段式：观点 → 证据 → 延伸/反方）
+4. **互动问句**（1 句，引导评论区）
+5. **话题**（5-8 个）
+6. **图片画面描述**（每张卡片的内容 + 视觉要点）
+
+**写稿原则**严格按照 `xiaohongshu-ops` 的 persona 风格：
+- 短句 + 换行，口语化
+- 有观点、有态度、不中立
+- 少解释，多断言
+- 保留可追问点用于评论区
+
+**保存**：
+- 用户原始输入 → `source.md`
+- 完整文案 → 后续步骤供 baoyu-xhs-images 出图时使用
+
+**用户干预点**：文案产生后告知用户，用户可修改。确认后进入下一步。
+
+### Step 3: 确认（`--publish` / `--dry-run` 模式跳过）
+
+呈现以下信息给用户确认：
+
+```
+📋 内容预览
+标题：[主标题]
+正文：[前 3 行...]
+
+🎨 推荐图片方案（自动匹配）
+风格：[notion/cute/bold/...]
+布局：[dense/sparse/list/...]
+张数：[5-7 张]
+
+❓ 选择模式
+A) 快速出图 — 信任推荐
+B) 自定义 — 调整风格/布局/张数
+```
+
+用户确认后进入 Step 4。
+
+### Step 4: 出图
+
+调用 `baoyu-xhs-images` 技能生成图片卡片：
+
+1. 加载 baoyu-xhs-images 的 EXTEND.md 偏好配置
+2. 传入用户确认的 prompt（或自动生成的画面描述）
+3. 图片质量参数 `--quality normal`
+4. 产出目录为 `image-cards/{topic-slug}/`
+
+**风格/布局匹配规则**（自动推荐，用户可覆盖）：
+
+| 内容类型 | 推荐风格 | 推荐布局 |
+|---------|---------|---------|
+| 心理/知识科普 | notion | dense |
+| 教程/步骤 | chalkboard | flow |
+| 避坑/提醒 | bold | list |
+| 生活/情感 | warm | balanced |
+| 冷知识/趣味 | pop | list |
+| 极简/金句 | minimal | sparse |
+
+### Step 5: 压缩
+
+调用 `baoyu-compress-image` 技能压缩所有生成图片：
+
+- 如果第一步产出的图片是 **PNG 格式** → 压缩为 **WebP 格式**
+- 如果是其他格式 → 保持原格式，仅压缩
+- 压缩质量：`--quality 80`
+- 压缩后保存到 `image-cards/{topic-slug}/compress/`
+- 压缩后清除原始大图（以 compress/ 下的为准）
+
+### Step 6: 结构化输出
+
+调用 `xiaohongshu-ops` 技能，按照其通用内容模板格式，将完整的小红书文案结构化输出到 `summary.md`：
+
+```
+image-cards/{topic-slug}/summary.md
+├── 标题（主选 + 备选）
+├── 开头钩子
+├── 正文（3 段）
+├── 互动提问
+├── 话题（5-8 个）
+├── 配图说明
+└── 配图路径（compress/*.webp）
+```
+
+### Step 7: 发布（`--dry-run` 模式跳过）
+
+调用 `xiaohongshu-ops` 技能发布到小红书：
+
+**前置条件检查**：
+1. `compress/` 目录下有图片文件
+2. `summary.md` 已就绪
+3. 浏览器可用（检查 `openclaw` profile 状态）
+
+**发布流程**：
+1. 告知用户即将进入浏览器操作
+2. 启动浏览器（`profile="openclaw"`）
+3. 导航到小红书创作后台
+4. 上传压缩后的图片
+5. 填写标题 + 正文 + 话题
+6. 停在发布按钮前，**不自动点击发布**
+7. 截图确认页面状态
+
+**默认行为**：停在发布按钮前等待用户确认（除非指定 `--publish`）
+**自动发布模式**（`--publish`）：到达发布按钮后，先截图确认，再提示用户手动或自动点击
+
+## 图片质量策略
+
+| 使用场景 | quality | 格式 |
+|---------|---------|------|
+| 出图（baoyu-xhs-images） | normal | PNG（默认） |
+| 压缩后 | 80 | WebP（PNG→WebP）或 原格式 |
+
+## 快速开始示例
+
+```bash
+# 一句描述自动完成全部流程
+/xhs-auto-creator "为什么口袋里的手机，总让你觉得它震了？"
+
+# 指定 prompt
+/xhs-auto-creator --prompt "写一篇关于现代人手机幻觉震动的科普"
+
+# 指定图片风格
+/xhs-auto-creator "选题" --style bold
+
+# 快速模式（跳过写稿，直接用描述出图）
+/xhs-auto-creator "选题" --fast
+
+# 自动发布
+/xhs-auto-creator "选题" --publish
+
+# 仅生成不发布
+/xhs-auto-creator "选题" --dry-run
+```
+
+## 注意事项
+- 本技能是**编排器**，不直接处理图片生成或发布，而是调度已有子技能
+- `--fast` 模式适用于用户已有完整文案描述，只需出图发布的场景
+- 默认模式（无 `--fast`）会先帮你写好完整的小红书文案，确认后再出图
+- `--dry-run` 模式在 Step 7（发布）前停止
+- 发布默认停在确认前（除非指定 `--publish`）
+- 浏览器操作遵循 xiaohongshu-ops 的 openclaw profile 约束

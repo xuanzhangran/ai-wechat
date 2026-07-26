@@ -1,4 +1,36 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 默认使用中文回复我。
+
+## 项目概览
+
+微信公众号 AI 写作工作流 + 小红书图文笔记创作。核心思路：**用户是导演，AI 是编剧**——用户负责"讲什么"，AI 负责"怎么写"。
+
+```
+ai-wechat/
+├── 00-草稿/            ← 正在写的文章（一个选题一个目录），发布后清空
+├── 01-文章/            ← 发布后归档，命名 YYYYMMDD_标题简称/
+│   └── 20260318_一人企业/  ← 唯一已归档文章（示例）
+├── 02-资源/            ← 写作风格（4份）、素材库、选题库、信息源
+├── 03-工具/网页工具/    ← 自建纯 HTML 网页小工具
+│   └── 文本统计/        ← 示例工具
+├── .agents/skills/     ← 已安装的技能（每个技能含 SKILL.md + scripts/）
+├── .baoyu-skills/      ← 技能配置和 API 密钥（已 gitignore）
+├── .claude/skills/     ← 技能符号链接，指向 .agents/skills/
+├── .sisyphus/          ← 编排器相关
+├── .mimocode/          ← 独立的 Node.js 项目（mimocode 服务）
+├── .playwright-mcp/    ← Playwright MCP 生成的缓存（已 gitignore）
+├── .baoyu-skills/.env  ← API 密钥存放位置（已 gitignore）
+├── image-cards/        ← 小红书图文卡片生图输出（已 gitignore）
+├── cover-image/        ← 封面图生图输出（已 gitignore）
+├── docs/guide.md       ← 安装指南
+├── CLAUDE.md           ← 本文件
+├── AGENTS.md           ← OpenCode 兼容说明
+├── skills-lock.json    ← 技能版本锁定（git hash）
+└── 去gemini 水印油猴脚本.js  ← 辅助工具脚本
+```
 
 ## 运行环境
 
@@ -12,6 +44,8 @@
 | **微信凭证** | `baoyu-post-to-wechat` API 发布方式 | `WECHAT_APP_ID` + `WECHAT_APP_SECRET` |
 
 `skills-lock.json` 锁定技能版本来源（jimliu/baoyu-skills 和 op7418/humanizer-zh 的 git hash），安装或更新技能后自动更新此文件。
+
+技能安装命令：`npx @anthropic-ai/claude-code skills install <仓库名>`（如 `npx @anthropic-ai/claude-code skills install jimliu/baoyu-skills`），指定技能名安装到 `.agents/skills/` 目录。
 
 ### 图片生成 API 密钥
 
@@ -43,6 +77,8 @@
 1. **Claude Code 原生**：`/<skill-name>`（如 `/baoyu-format-markdown`）
 2. **直接跑脚本**：`bun run .agents/skills/<技能名>/scripts/main.ts --args`
 
+`.claude/skills/` 目录下的技能条目均为指向 `.agents/skills/` 的符号链接，实际代码和 SKILL.md 存储在 `.agents/skills/` 中。修改技能时直接编辑 `.agents/skills/<技能名>/` 下文件即可。
+
 ## 写作资源（长期维护）
 
 | 文章类型 | 风格文件 | 触发信号 |
@@ -54,7 +90,23 @@
 - 选题库：`02-资源/选题库.md`（写作全过程保持状态同步）
 - 信息源：`02-资源/信息源.md`
 
+其他写作参考（非强制）：`02-资源/勇鹏的写作风格.md`、`02-资源/Dan Koe 写作风格参考.md`
+
+## 技能管理
+
+技能来源于 [baoyu-skills](https://github.com/JimLiu/baoyu-skills/)（jimliu/baoyu-skills）和 [humanizer-zh](https://github.com/op7418/humanizer-zh) 仓库，版本通过 `skills-lock.json` 锁定。
+
+安装新技能：
+```bash
+npx @anthropic-ai/claude-code skills install jimliu/baoyu-skills
+```
+安装完后自动更新 `skills-lock.json` 中的 hash。技能安装过程会生成 `.agents/skills/<技能名>/` 目录和 `.claude/skills/` 下的符号链接。
+
+安装指南见 `docs/guide.md`。
+
 ## 技能速查表
+
+### 核心写作工作流技能
 
 | 技能 | 类型 | 什么时候用 |
 |------|------|-----------|
@@ -67,11 +119,52 @@
 | `baoyu-post-to-wechat` | TS 脚本 → bun | 发布到公众号草稿箱（优先 API；浏览器方式备用需先问户） |
 | `baoyu-translate` | TS 脚本 → bun | 需要翻译文章（快速/普通/精翻三种模式） |
 | `baoyu-compress-image` | TS 脚本 → bun | 需要压缩图片（WebP/PNG/JPEG） |
-| `xhs-auto-creator` | 编排器（调用其他技能）| 需要创作小红书图文笔记 |
+
+### 编排器
+
+| 技能 | 类型 | 什么时候用 |
+|------|------|-----------|
+| `xhs-auto-creator` | 编排器（调用其他技能）| 需要创作小红书图文笔记（自动走完选题→写稿→配图→生图→排版的完整流程） |
+| `wechat-auto-creator` | 编排器 | 需要自动走完公众号写作完整流程 |
+
+### 内容获取与转换
+
+| 技能 | 类型 | 什么时候用 |
+|------|------|-----------|
+| `baoyu-url-to-markdown` | TS 脚本 → bun | 需要把网页链接转成 Markdown |
+| `baoyu-danger-x-to-markdown` | TS 脚本 → bun | 需要把推特/X 链接转成 Markdown |
+| `baoyu-youtube-transcript` | TS 脚本 → bun | 需要获取 YouTube 视频字幕 |
+| `baoyu-danger-gemini-web` | TS 脚本 → bun | 需要抓取 Gemini Web 内容 |
+
+### 图文与设计
+
+| 技能 | 类型 | 什么时候用 |
+|------|------|-----------|
+| `baoyu-xhs-images` | TS 脚本 → bun | 需要生成小红书风格图文卡片（12 种视觉风格、8 种布局） |
+| `baoyu-comic` | TS 脚本 → bun | 需要生成漫画风格图片 |
+| `baoyu-infographic` | TS 脚本 → bun | 需要生成信息图 |
+| `baoyu-diagram` | TS 脚本 → bun | 需要生成图表/图示 |
+| `baoyu-slide-deck` | TS 脚本 → bun | 需要生成幻灯片 |
+
+### 多平台发布
+
+| 技能 | 类型 | 什么时候用 |
+|------|------|-----------|
+| `baoyu-post-to-weibo` | TS 脚本 → bun | 需要发布到微博 |
+| `baoyu-post-to-x` | TS 脚本 → bun | 需要发布到 X/Twitter |
+| `baoyu-wechat-summary` | 纯提示词 | 需要生成文章摘要 |
+| `xiaohongshu-ops` | 编排器 | 小红书运营相关操作 |
+
+### 系统工具
+
+| 技能 | 类型 | 什么时候用 |
+|------|------|-----------|
+| `baoyu-electron-extract` | TS 脚本 → bun | 需要提取 Electron 应用内容 |
+| `release-skills` | 发布工具 | 技能发布相关 |
 
 ## 写作工作流
 
-用户是导演，AI 是编剧。用户负责"讲什么"，AI 负责"怎么写"。
+### 公众号流程
 
 1. **写稿**：
    - 根据输入素材判断文章类型（字幕/访谈 → 访谈重播；其他 → 观点原创）
@@ -99,6 +192,10 @@
    - 更新选题库：在 `02-资源/选题库.md` 中将选题移至对应状态分区，更新总览表
    - 更新素材库：从刚归档的文章中提炼一条可复用的素材或洞察，追加到 `02-资源/素材库.md`
 
+### 小红书流程
+
+用 `xhs-auto-creator` 编排器自动完成：选题分析 → 写稿 → 配图设计 → 生图 → 排版发布的全流程。
+
 ## 网页工具
 
 当用户说"创建某某工具"时，默认按这个方式来建：
@@ -106,3 +203,12 @@
 - 目录：`03-工具/网页工具/<工具名>/index.html`（单工具一个目录）
 - 技术栈：尽量纯 HTML（内联 CSS + JS），不引入构建与依赖
 - 索引：新增工具后同步更新 `03-工具/网页工具/README.md`
+
+## 注意事项
+
+- 无构建系统、无测试、无 lint — 这是内容工作流项目，不是纯代码项目
+- `image-cards/` 和 `cover-image/` 是技能生图输出目录，已 gitignore，不需要手动管理
+- `.mimocode/` 目录是独立的 Node.js 项目（mimocode 服务），与本工作流无关
+- 图片路径在归档时必须改为相对路径 `images/`
+- `humanizer-zh` 仅用于观点原创型文章，访谈重播型跳过
+- 发布公众号后建议在后台手动确认封面图、摘要与图片展示是否正常
