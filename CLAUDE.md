@@ -124,8 +124,10 @@ npx @anthropic-ai/claude-code skills install jimliu/baoyu-skills
 
 | 技能 | 类型 | 什么时候用 |
 |------|------|-----------|
-| `xhs-auto-creator` | 编排器（调用其他技能）| 需要创作小红书图文笔记（自动走完选题→写稿→配图→生图→排版的完整流程） |
+| `xhs-auto-creator` | 编排器（调用其他技能）| 需要创作小红书图文笔记（自动走完选题→写稿→配图→生图→排版发布的全流程） |
+| `xhs-content-creator` | 编排器（纯提示词） | 需要从一句话选题生成小红书完整图文内容（不含发布），配合 `xiaohongshu-ops` 使用 |
 | `wechat-auto-creator` | 编排器 | 需要自动走完公众号写作完整流程 |
+| `xiaohongshu-ops` | 编排器 | 小红书运营相关操作（发布、管理） |
 
 ### 内容获取与转换
 
@@ -153,7 +155,6 @@ npx @anthropic-ai/claude-code skills install jimliu/baoyu-skills
 | `baoyu-post-to-weibo` | TS 脚本 → bun | 需要发布到微博 |
 | `baoyu-post-to-x` | TS 脚本 → bun | 需要发布到 X/Twitter |
 | `baoyu-wechat-summary` | 纯提示词 | 需要生成文章摘要 |
-| `xiaohongshu-ops` | 编排器 | 小红书运营相关操作 |
 
 ### 系统工具
 
@@ -194,7 +195,8 @@ npx @anthropic-ai/claude-code skills install jimliu/baoyu-skills
 
 ### 小红书流程
 
-用 `xhs-auto-creator` 编排器自动完成：选题分析 → 写稿 → 配图设计 → 生图 → 排版发布的全流程。
+- 全自动（含发布）：用 `xhs-auto-creator` 编排器自动完成选题分析 → 写稿 → 配图设计 → 生图 → 排版发布的全流程。
+- 仅内容生成（不含发布）：用 `xhs-content-creator` 生成图文内容，再用 `xiaohongshu-ops` 手动发布。
 
 ## 网页工具
 

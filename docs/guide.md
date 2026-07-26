@@ -29,6 +29,9 @@ npx skills add https://github.com/xiangyu-cas/xiaohongshu-ops-skill --skill xiao
 | Replicate | `REPLICATE_API_TOKEN` | replicate.com |
 | OpenRouter | `OPENROUTER_API_KEY` | openrouter.ai |
 
+## 创建符号链接举例
+ln -s ../../.agents/skills/xhs-content-creator .claude/skills/xhs-content-creator
+
 ## 参考资料
 https://www.skills.sh/autoclaw-cc/xiaohongshu-skills/xiaohongshu-skills
 https://www.skills.sh/white0dew/xiaohongshuskills/redbookskills
