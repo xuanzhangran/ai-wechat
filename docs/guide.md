@@ -14,6 +14,9 @@ npm install -g opencode-ai
 ```bash
 npx skills add jimliu/baoyu-skills -y
 npx skills add https://github.com/xiangyu-cas/xiaohongshu-ops-skill --skill xiaohongshu-ops
+npx skills add https://github.com/kangarooking/cangjie-skill --skill cangjie-skill
+npx skills add alchaincyf/nuwa-skill
+npx skills add alchaincyf/darwin-skill
 ```
 
 ### 根目录下创建
