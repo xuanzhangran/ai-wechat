@@ -9,6 +9,7 @@ node_modules/
 
 # 生成文件夹
 image-cards/
+history-chatter/
 cover-image/
 .playwright-mcp/
 
