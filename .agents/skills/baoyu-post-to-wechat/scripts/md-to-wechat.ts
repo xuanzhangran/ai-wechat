@@ -97,7 +97,31 @@ export async function convertMarkdown(
     primaryColor: resolveColorToken(options?.color),
     theme: options?.theme,
   });
-  fs.writeFileSync(htmlPath, html, "utf-8");
+
+  let modifiedHtml = html.replace(
+    /(<blockquote[^>]*?style=")([^"]*)(")/gi,
+    (_, prefix: string, style: string, suffix: string) =>
+      style.includes("padding-left") ? _ : `${prefix}${style}; padding-left: 5px${suffix}`,
+  );
+
+  const containerMatch = modifiedHtml.match(
+    /<section class="container" style="([^"]*)"/,
+  );
+  if (containerMatch) {
+    const cleaned = containerMatch[1]!
+      .replace(/\s*padding:\s*[^;]+;?\s*/g, "")
+      .replace(/\s*background-color:\s*[^;]+;?\s*/g, "")
+      .replace(/;\s*;/g, ";")
+      .replace(/^;\s*/, "")
+      .replace(/;\s*$/, "")
+      .trim();
+    modifiedHtml = modifiedHtml.replace(
+      containerMatch[0],
+      `<section class="container" style="${cleaned}"`,
+    );
+  }
+
+  fs.writeFileSync(htmlPath, modifiedHtml, "utf-8");
 
   const contentImages = await resolveContentImages(images, baseDir, tempDir, "md-to-wechat");
 
