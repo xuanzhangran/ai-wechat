@@ -157,7 +157,30 @@ export async function convertMarkdown(
     fs.renameSync(finalHtmlPath, backupPath);
   }
 
-  fs.writeFileSync(finalHtmlPath, html, "utf-8");
+  let modifiedHtml = html.replace(
+    /(<blockquote[^>]*?style=")([^"]*)(")/gi,
+    (_, prefix: string, style: string, suffix: string) =>
+      style.includes("padding-left") ? _ : `${prefix}${style}; padding-left: 5px${suffix}`,
+  );
+
+  const containerMatch = modifiedHtml.match(
+    /<section class="container" style="([^"]*)"/,
+  );
+  if (containerMatch) {
+    const cleaned = containerMatch[1]!
+      .replace(/\s*padding:\s*[^;]+;?\s*/g, "")
+      .replace(/\s*background-color:\s*[^;]+;?\s*/g, "")
+      .replace(/;\s*;/g, ";")
+      .replace(/^;\s*/, "")
+      .replace(/;\s*$/, "")
+      .trim();
+    modifiedHtml = modifiedHtml.replace(
+      containerMatch[0],
+      `<section class="container" style="${cleaned}"`,
+    );
+  }
+
+  fs.writeFileSync(finalHtmlPath, modifiedHtml, "utf-8");
 
   const hasRemoteImages = images.some((image) =>
     image.originalPath.startsWith("http://") || image.originalPath.startsWith("https://"),
