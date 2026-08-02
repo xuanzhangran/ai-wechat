@@ -15,7 +15,7 @@ description: "小红书图文内容生成器 — 从一句话选题到生成完�
 ```
 用户输入 "写一篇关于XXX的小红书笔记"
   │
-  ├─ Step 1: 解析输入 → 确定 topic-slug + 模式
+  ├─ Step 1: 解析输入 → 确定输出目录名 + 模式
   ├─ Step 2: 写稿 → 生成完整的小红书文案（--fast 模式跳过）
   ├─ Step 3: 确认 → 用户确认文案 + 图片方案（--no-confirm 跳过）
   ├─ Step 4: 出图 → baoyu-xhs-images 生成图片卡片
@@ -24,9 +24,9 @@ description: "小红书图文内容生成器 — 从一句话选题到生成完�
 ```
 
 ## 输出目录
-所有产物统一放在 `image-cards/{topic-slug}/` 目录下：
+所有产物统一放在 `image-cards/{YYYYMMDD_标题简称}/` 目录下：
 ```
-image-cards/{topic-slug}/
+image-cards/{YYYYMMDD_标题简称}/
 ├── source.md               ← 用户原始输入
 ├── analysis.md             ← 内容分析
 ├── outline.md              ← 出图大纲
@@ -35,6 +35,13 @@ image-cards/{topic-slug}/
 ├── compress/               ← 压缩后的 WebP 图片
 └── {NN}-{type}-{slug}.png  ← 原始图片
 ```
+
+**命名规则**：`YYYYMMDD_标题简称`
+- `YYYYMMDD` = 当天日期（如 `20260802`）
+- `标题简称` = 从文案主标题中提取 2-6 个汉字的核心关键词（如「手机幻觉震动」）
+- 示例：`20260802_手机幻觉震动`
+- `--fast` 模式下从用户输入中提取标题关键词
+- **默认模式**：Step 1 先用用户输入生成临时目录名 `YYYYMMDD_{输入关键词}`，Step 2 写完稿后用主标题替换关键词部分（如有变化则重命名目录）
 
 ## 参数说明
 | 调用方式 | 示例 |
@@ -60,7 +67,7 @@ image-cards/{topic-slug}/
 |------|---------|
 | `--prompt "..."` | 取 `--prompt` 后面的全部内容 |
 | 位置参数 | 取第一个非选项字符串参数 |
-| `{topic-slug}` | 从主题生成 2-4 词 kebab-case slug（中文翻译成英文） |
+| `{输出目录名}` | `YYYYMMDD_标题简称` 格式（如 `20260802_手机幻觉震动`）。默认模式 Step 1 先用输入关键词生成临时名，Step 2 后用主标题替换；`--fast` 模式直接从用户输入提取 |
 | `--style` | 指定 baoyu-xhs-images 的图片风格 |
 | `--fast` | 跳过写稿步骤，直接用用户描述出图 |
 | `--no-images` | 只生成文案，不生成图片 |
@@ -87,6 +94,8 @@ image-cards/{topic-slug}/
 **保存**：
 - 用户原始输入 → `source.md`
 - 完整文案 → 后续步骤供 baoyu-xhs-images 出图时使用
+
+**目录名更新**：Step 2 产出主标题后，从标题中提取 2-6 字关键词作为标题简称。若与 Step 1 临时目录名中的关键词不同，重命名输出目录为 `YYYYMMDD_{新标题简称}`。
 
 **用户干预点**：文案产生后告知用户，用户可修改。确认后进入下一步。
 
@@ -118,7 +127,7 @@ B) 自定义 — 调整风格/布局/张数
 1. 加载 baoyu-xhs-images 的 EXTEND.md 偏好配置
 2. 传入用户确认的 prompt（或自动生成的画面描述）
 3. 图片质量参数 `--quality normal`
-4. 产出目录为 `image-cards/{topic-slug}/`
+4. 产出目录为 `image-cards/{YYYYMMDD_标题简称}/`
 
 **风格/布局匹配规则**（自动推荐，用户可覆盖）：
 
@@ -138,7 +147,7 @@ B) 自定义 — 调整风格/布局/张数
 - 如果第一步产出的图片是 **PNG 格式** → 压缩为 **WebP 格式**
 - 如果是其他格式 → 保持原格式，仅压缩
 - 压缩质量：`--quality 80`
-- 压缩后保存到 `image-cards/{topic-slug}/compress/`
+- 压缩后保存到 `image-cards/{YYYYMMDD_标题简称}/compress/`
 - 压缩后清除原始大图（以 compress/ 下的为准）
 
 ### Step 6: 结构化输出
@@ -146,7 +155,7 @@ B) 自定义 — 调整风格/布局/张数
 将完整的小红书文案结构化输出到 `summary.md`：
 
 ```
-image-cards/{topic-slug}/summary.md
+image-cards/{YYYYMMDD_标题简称}/summary.md
 ├── 标题（主选 + 备选）
 ├── 开头钩子
 ├── 正文（3 段）
