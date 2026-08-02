@@ -17,6 +17,7 @@ npx skills add https://github.com/xiangyu-cas/xiaohongshu-ops-skill --skill xiao
 npx skills add https://github.com/kangarooking/cangjie-skill --skill cangjie-skill
 npx skills add alchaincyf/nuwa-skill
 npx skills add alchaincyf/darwin-skill
+npx skills add https://github.com/iamzhihuix/happy-claude-skills --skill wechat-article-writer
 ```
 
 ### 根目录下创建
