@@ -18,6 +18,7 @@ npx skills add https://github.com/kangarooking/cangjie-skill --skill cangjie-ski
 npx skills add alchaincyf/nuwa-skill
 npx skills add alchaincyf/darwin-skill
 npx skills add https://github.com/iamzhihuix/happy-claude-skills --skill wechat-article-writer
+npx skills add https://github.com/vercel-labs/agent-browser --skill agent-browser
 ```
 
 ### 根目录下创建
