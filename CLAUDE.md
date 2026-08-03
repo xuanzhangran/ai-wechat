@@ -126,7 +126,10 @@ npx @anthropic-ai/claude-code skills install jimliu/baoyu-skills
 |------|------|-----------|
 | `xhs-auto-creator` | 编排器（调用其他技能）| 需要创作小红书图文笔记（自动走完选题→写稿→配图→生图→排版发布的全流程） |
 | `xhs-content-creator` | 编排器（纯提示词） | 需要从一句话选题生成小红书完整图文内容（不含发布），配合 `xiaohongshu-ops` 使用 |
-| `wechat-auto-creator` | 编排器 | 需要自动走完公众号写作完整流程 |
+| `wechat-auto-creator` | 编排器 | 需要从一句话选题自动走完公众号写作完整流程（写稿→配图→发布→归档） |
+| `wechat-copywriter` | 编排器 | 需要**仿写**博客/网页链接成公众号文章（抓取→补充官网资料→按指定文风重写→配图→发布），9 种文风可选 |
+| `wechat-article-writer` | 纯提示词 | 需要写公众号文章（搜索资料→撰写→爆款标题→排版优化），不依赖图片素材 |
+| `wechat-xhs-post` | 编排器 | 需要把已有小红书图文素材（`image-cards/`）复用成公众号长文（扩写→去AI味→WebP转PNG→发布） |
 | `xiaohongshu-ops` | 编排器 | 小红书运营相关操作（发布、管理） |
 
 ### 内容获取与转换
@@ -166,6 +169,16 @@ npx @anthropic-ai/claude-code skills install jimliu/baoyu-skills
 ## 写作工作流
 
 ### 公众号流程
+
+三个编排器按素材来源分流，先判断用户输入走哪条：
+
+| 输入形态 | 编排器 |
+|---------|-------|
+| 一句话选题（从零写） | `wechat-auto-creator` |
+| 博客/网页链接（仿写） | `wechat-copywriter` |
+| 已有小红书图文素材（`image-cards/`） | `wechat-xhs-post` |
+
+手动流程（各步骤可单独调用技能）：
 
 1. **写稿**：
    - 根据输入素材判断文章类型（字幕/访谈 → 访谈重播；其他 → 观点原创）
@@ -213,4 +226,5 @@ npx @anthropic-ai/claude-code skills install jimliu/baoyu-skills
 - `.mimocode/` 目录是独立的 Node.js 项目（mimocode 服务），与本工作流无关
 - 图片路径在归档时必须改为相对路径 `images/`
 - `humanizer-zh` 仅用于观点原创型文章，访谈重播型跳过
+- **微信 API 不支持 WebP 图片**：上传会报 `40113: unsupported file type`。发布前所有图片（含封面）需转为 PNG，用 `baoyu-compress-image` 的 `-f png --keep` 或 PIL 转换（Windows 下勿用 ImageMagick 的 `convert`，会被 PowerShell 解析为别名）
 - 发布公众号后建议在后台手动确认封面图、摘要与图片展示是否正常
