@@ -142,7 +142,7 @@ description: "微信公众号自动图文编排器 — 从一句话选题到发�
 3. `google`（Gemini）— 最后的备用
 
 **质量参数**：
-- 封面图：`--quality 2k`
+- 封面图：`--quality normal`
 - 文内图：`--quality normal`
 - 比例：封面图 `--ar 16:9`，文内图根据内容选择 `16:9` 或 `1:1`
 

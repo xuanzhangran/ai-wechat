@@ -15,6 +15,8 @@ metadata:
     - baoyu-post-to-wechat
     - humanizer-zh
     - baoyu-compress-image
+    - baoyu-cover-image
+    - baoyu-image-gen
 ---
 
 # 公众号仿写技能 (wechat-copywriter)
@@ -31,9 +33,9 @@ metadata:
   ├─ Step 2: 识别关键概念 → 提取核心术语、产品名、技术点
   ├─ Step 3: 补充资料 → 搜索官网、交叉校验、补充权威信息
   ├─ Step 4: 重写文章 → 融合两源内容，按指定风格创作
-  ├─ Step 5: 图片排版 → 引用本地原图，生成完整图文
+  ├─ Step 5: 图片排版 → 封面图生成 + 引用原图 + 补充配图
   ├─ Step 6: 输出成品 → Markdown + 公众号兼容 HTML
-  └─ Step 7: 发布草稿 → baoyu-post-to-wechat → 确认发布
+  └─ Step 7: 发布草稿 → baoyu-post-to-wechat（API 优先）→ 确认发布
 ```
 
 ## 参数说明
@@ -288,22 +290,76 @@ $BAOYU_FETCH <url> --output 00-草稿/{YYYYMMDD_标题简称}/original/article.m
 
 ## Step 5: 图片排版
 
-### 5.1 引用原图
+### 5.1 封面图生成（必须）
 
-默认模式：直接引用 Step 1 下载的原图。
+每篇文章都需要封面图。调用 `baoyu-cover-image` 技能，根据文章标题和核心观点生成封面图：
 
-在 `article.md` 中，图片引用格式：
+1. 分析文章标题和核心观点，确定封面图主题
+2. 调用 `baoyu-cover-image` 生成封面（默认参数）：
+   - `--type hero` — 视觉冲击力强
+   - `--aspect 16:9` — 公众号封面比例
+   - `--text title-only` — 标题文字叠加
+   - `--lang zh` — 中文标题
+   - `--quality normal` — 无需高清，节省生成时间
+   - `--quick` — 跳过确认，使用自动选择
+3. 封面图保存为 `00-草稿/{YYYYMMDD_标题简称}/images/cover.png`
+4. 在 `article.md` frontmatter 中添加 `cover: images/cover.png`
+
+```bash
+# 生成封面图（由 baoyu-cover-image 内部调用 baoyu-image-gen 生图）
+# 保存到 images/cover.png
+```
+
+### 5.2 封面图压缩（必须）
+
+封面图生成后，**必须**调用 `baoyu-compress-image` 压缩，确保公众号上传不超限：
+
+```bash
+bun run .agents/skills/baoyu-compress-image/scripts/main.ts \
+  00-草稿/{YYYYMMDD_标题简称}/images/cover.png
+```
+
+- 压缩后默认输出 WebP 格式（体积更小，公众号兼容）
+- 如需保留 PNG 格式，追加 `-f png --keep`
+
+### 5.3 引用原图
+
+将 Step 1 下载的博客原图复制到 `images/` 目录，在 `article.md` 中引用：
+
 ```markdown
 ![图片描述](images/filename.jpg)
 ```
 
-### 5.2 图片优化（可选）
+**图片来源优先级**：
+1. 博客原图（Step 1 下载的 `original/images/`）— 默认使用
+2. 补充生成的配图（Step 5.4 生成）— 原图不足时补充
 
-如需压缩图片，调用 `baoyu-compress-image`：
+### 5.4 文内配图补充（可选）
+
+当原博客图片数量不足（少于 2 张）或缺少关键段落配图时，调用 AI 补充生成：
+
+**触发条件**：
+- 原博客图片 < 2 张
+- 文章有 3 个以上主要段落但仅有 1 张配图
+
+**执行流程**：
+1. 调用 `baoyu-article-illustrator` 分析文章结构，识别需要配图的位置
+2. 确定每张图的 Type × Style × Palette 三维度
+3. 调用 `baoyu-image-gen` 批量生成补充配图（Provider 优先级：openai → dashscope → google）
+4. 图片保存到 `images/` 目录，更新 `article.md` 中的图片引用
+
+**要求**：
+- 补充配图风格应与封面图保持一致（可用封面图作为 `--ref` 锚定风格）
+- 文内配图使用 `--quality normal`，比例 `--ar 16:9` 或 `--ar 1:1`
+- 至少生成 1 张补充配图
+
+### 5.5 图片压缩（可选）
+
+如需压缩文内图片（单张 > 500KB），调用 `baoyu-compress-image`：
 
 ```bash
-# 压缩图片
-bun run .agents/skills/baoyu-compress-image/scripts/main.ts 00-草稿/{YYYYMMDD_标题简称}/article.md
+bun run .agents/skills/baoyu-compress-image/scripts/main.ts \
+  00-草稿/{YYYYMMDD_标题简称}/images/filename.jpg
 ```
 
 ## Step 6: 输出成品
@@ -331,9 +387,10 @@ bun run .agents/skills/baoyu-markdown-to-html/scripts/main.ts \
 00-草稿/{YYYYMMDD_标题简称}/
 ├── article.md              # Markdown 源文件
 ├── article.html            # 公众号兼容 HTML
-├── images/                 # 下载的原图
-│   ├── image1.jpg
-│   └── image2.png
+├── images/                 # 图片目录
+│   ├── cover.png           # 封面图（baoyu-cover-image 生成）
+│   ├── image1.jpg          # 博客原图
+│   └── image2.png          # 补充配图（如有）
 ├── original/               # 原始抓取内容（可删除）
 │   ├── article.md
 │   └── images/
@@ -364,19 +421,27 @@ bun run .agents/skills/baoyu-markdown-to-html/scripts/main.ts \
 
 ### 7.2 执行发布
 
-用户确认后，调用 `baoyu-post-to-wechat` 发布到公众号草稿箱：
+用户确认后，**优先使用 API 方式**发布到公众号草稿箱。
+
+**API 方式优先**：检测 `.baoyu-skills/.env` 中是否存在 `WECHAT_APP_ID` + `WECHAT_APP_SECRET`，有则直接走 API：
 
 ```bash
-# API 方式（推荐）
+# API 方式（首选 — 无需打开浏览器，静默发布）
 bun run .agents/skills/baoyu-post-to-wechat/scripts/wechat-api.ts \
-  00-草稿/{YYYYMMDD_标题简称}/article.md \
+  00-草稿/{YYYYMMDD_标题简称}/article.html \
   --theme modern
+```
 
-# 浏览器方式（备用）
+**浏览器备用**：API 不可用时（缺少凭证或 API 调用失败），告知用户，经同意后走浏览器方式：
+
+```bash
+# 浏览器方式（需手动操作，自动打开公众号后台）
 bun run .agents/skills/baoyu-post-to-wechat/scripts/wechat-article.ts \
   --markdown 00-草稿/{YYYYMMDD_标题简称}/article.md \
   --theme modern
 ```
+
+**自动发布模式**（`--publish`）：直接调用 API 发布，不打断确认。API 不可用时报错停止，不回退浏览器方式（避免意外打开浏览器）。
 
 ### 7.3 发布结果反馈
 
@@ -387,7 +452,7 @@ bun run .agents/skills/baoyu-post-to-wechat/scripts/wechat-article.ts \
 ✅ 已成功发布到公众号草稿箱！
 
 文章标题：{标题}
-草稿链接：{草稿URL}
+media_id: {media_id}
 
 请登录微信公众号后台查看并发布。
 ```
@@ -408,7 +473,7 @@ bun run .agents/skills/baoyu-post-to-wechat/scripts/wechat-article.ts \
 
 | 参数 | 说明 | 默认值 |
 |------|------|--------|
-| `--publish` | 跳过确认直接发布 | `false` |
+| `--publish` | 跳过确认直接发布（API 模式） | `false` |
 | `--dry-run` | 仅生成不发布 | `false` |
 
 示例：
@@ -443,9 +508,12 @@ bun run .agents/skills/baoyu-post-to-wechat/scripts/wechat-article.ts \
 3. [WebSearch] 补充资料      → 搜索官网
 4. [手动] 融合重写           → 创作文章
 5. humanizer-zh              → 去 AI 味（可选）
-6. baoyu-compress-image      → 图片压缩（可选）
-7. baoyu-markdown-to-html    → 转 HTML
-8. baoyu-post-to-wechat      → 发布到草稿箱
+6. baoyu-cover-image         → 生成封面图
+7. baoyu-compress-image      → 压缩封面图
+8. baoyu-image-gen           → 补充配图（可选）
+9. baoyu-compress-image      → 压缩文内图（可选）
+10. baoyu-markdown-to-html   → 转 HTML
+11. baoyu-post-to-wechat     → 发布到草稿箱
 ```
 
 ## 注意事项
@@ -453,9 +521,11 @@ bun run .agents/skills/baoyu-post-to-wechat/scripts/wechat-article.ts \
 - 本技能是**编排器**，调度已有子技能完成工作流
 - 每个步骤的输出是下一个步骤的输入
 - 用户可在步骤之间介入（如修改重写内容、调整风格）
-- 图片默认直接复用原图，不进行 AI 重新生成
+- **封面图**：每篇文章必须生成封面图（baoyu-cover-image），保存到 `images/cover.png`
+- **文内配图**：默认复用博客原图；原图不足时可调用 baoyu-image-gen 补充生成
 - 风格规范在 `references/styles/` 目录下，可按需扩展
 - **风格选择**：未指定 `--style` 时必须交互式询问，默认选择「生动科普」
 - **发布前必须确认**：Step 7 会交互式询问用户是否确认发布，除非指定 `--publish` 参数
-- **发布方式**：优先使用 API 方式，API 不可用时提示用户切换浏览器方式
+- **发布方式**：API 优先（有 `WECHAT_APP_ID` + `WECHAT_APP_SECRET` 时走 API），API 不可用时提示用户切换浏览器方式
+- **自动发布模式**（`--publish`）：直接调用 API 发布，不打断确认；API 不可用时报错停止，不回退浏览器方式
 - **草稿箱**：发布到公众号草稿箱，用户需登录后台手动发布
