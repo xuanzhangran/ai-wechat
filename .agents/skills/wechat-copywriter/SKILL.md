@@ -30,6 +30,7 @@ metadata:
   │
   ├─ Step 0: 参数解析 → 提取 URL、交互式选择风格、确定输出目录
   ├─ Step 1: 抓取博客 → baoyu-url-to-markdown (内容 + 图片)
+  │           └─ 降级: webfetch + 提取图片 URL + 内嵌 SVG 转 PNG + 下载图片
   ├─ Step 2: 识别关键概念 → 提取核心术语、产品名、技术点
   ├─ Step 3: 补充资料 → 搜索官网、交叉校验、补充权威信息
   ├─ Step 4: 重写文章 → 融合两源内容，按指定风格创作
@@ -174,6 +175,8 @@ URL: https://xxx.blog
 
 > **前置条件**：Step 0.4 的 `mkdir -p` 已执行，目录已创建。
 
+### 1.1 主方案：baoyu-url-to-markdown
+
 使用 `baoyu-url-to-markdown` 抓取博客内容和图片：
 
 ```bash
@@ -189,7 +192,98 @@ $BAOYU_FETCH <url> --output "${DIR}/original/article.md" --download-media
 - `${DIR}/original/article.md` — 博客 Markdown 内容
 - `${DIR}/original/images/` — 下载的图片目录
 
-**质量检查**：抓取后检查内容完整性，如发现内容缺失或质量差，尝试使用 `--wait-for interaction` 模式重试。
+### 1.2 降级方案：webfetch + curl 下载图片
+
+当 `baoyu-url-to-markdown` 失败（reCAPTCHA、JS 渲染等）时，使用降级方案：
+
+**步骤 A：用 webfetch 抓取 HTML**
+
+```bash
+# webfetch 只提取文本，不下载图片
+# 需要从 HTML 中提取图片 URL 后单独下载
+```
+
+**步骤 B：从 HTML 提取图片 URL**
+
+使用正则或 Grep 从 HTML 中提取所有图片 URL：
+
+```bash
+# 提取所有 <img> 标签中的 src 属性
+# 支持的格式：.jpg, .jpeg, .png, .gif, .webp, .svg
+# 排除：base64 内联图片、广告追踪像素
+```
+
+**步骤 B2：提取内嵌 SVG 并转 PNG**
+
+许多技术博客的架构图、流程图是以内嵌 `<svg>` 元素嵌入 HTML 的（非 `<img>` 引用），需要单独处理：
+
+```bash
+# 使用 extract-svg.ts 提取内嵌 SVG → 替换 CSS 变量 → 转 PNG
+bun run .agents/skills/wechat-copywriter/scripts/extract-svg.ts \
+  <raw_html_file> \
+  ${DIR}/images \
+  --prefix arch
+```
+
+**处理流程**：
+1. 从 HTML 中提取所有 `<svg>...</svg>` 块（正则匹配）
+2. 从页面 `<style>` 和内联样式中提取 CSS 变量定义（`--c-xxx: #ccc`）
+3. 将 `var(--c-xxx)` 替换为实际颜色值
+4. 添加白色背景 + 中文字体声明，确保渲染正确
+5. 用 `sharp` 将每个 SVG 转为 PNG（白底，无损）
+6. 保存到 `${DIR}/images/` 目录，命名为 `arch-1.png`, `arch-2.png`...
+
+**输出 JSON 格式**（stdout）：
+```json
+{
+  "totalSVGs": 7,
+  "converted": 7,
+  "skipped": 0,
+  "files": [
+    {"name": "arch-1.png", "width": 680, "height": 120, "sizeKB": 8.2}
+  ],
+  "errors": []
+}
+```
+
+**跳过规则**：
+- SVG 内文本内容少于 2 字符的（纯装饰性元素）自动跳过
+- 已有 `<img src="*.svg">` 引用的不重复处理
+
+**步骤 C：下载图片到 images/ 目录**
+
+```bash
+# 使用 curl 或 Invoke-WebRequest 下载每个图片
+# 保存到 ${DIR}/images/ 目录
+# 文件名使用 URL 最后一段或自动生成
+```
+
+**步骤 D：更新 article.md 图片引用**
+
+将下载的图片路径替换到 article.md 中：
+
+```markdown
+![图片描述](images/filename.png)
+```
+
+### 1.3 图片来源优先级
+
+| 优先级 | 来源 | 说明 |
+|--------|------|------|
+| 1 | baoyu-url-to-markdown | 首选，自动下载内容+图片 |
+| 2 | webfetch + curl | 降级方案，手动提取并下载图片 |
+| 3 | 无图片 | 仅保留文字内容 |
+
+### 1.4 质量检查
+
+抓取后检查内容完整性，如发现内容缺失或质量差，尝试使用 `--wait-for interaction` 模式重试。
+
+**检查清单**：
+- [ ] 文章标题是否完整
+- [ ] 正文内容是否丢失
+- [ ] 图片是否全部下载
+- [ ] 内嵌 SVG 是否已提取并转换为 PNG（如有）
+- [ ] 图片引用路径是否正确
 
 ## Step 2: 识别关键概念
 
@@ -406,6 +500,8 @@ bun run .agents/skills/baoyu-markdown-to-html/scripts/main.ts \
 ├── images/                 # 图片目录
 │   ├── cover.png           # 封面图（baoyu-cover-image 生成）
 │   ├── image1.jpg          # 博客原图
+│   ├── arch-1.png          # 内嵌 SVG 转换（如有）
+│   ├── arch-2.png          # 内嵌 SVG 转换（如有）
 │   └── image2.png          # 补充配图（如有）
 ├── original/               # 原始抓取内容（可删除）
 │   ├── article.md
@@ -520,16 +616,17 @@ media_id: {media_id}
 ```
 0. [参数解析] 提取URL、交互式选择风格  → 确定输入参数
 1. baoyu-url-to-markdown     → 抓取内容
-2. [手动] 提取关键概念       → 分析内容
-3. [WebSearch] 补充资料      → 搜索官网
-4. [手动] 融合重写           → 创作文章
-5. humanizer-zh              → 去 AI 味（可选）
-6. baoyu-cover-image         → 生成封面图
-7. baoyu-compress-image      → 压缩封面图
-8. baoyu-image-gen           → 补充配图（可选）
-9. baoyu-compress-image      → 压缩文内图（可选）
-10. baoyu-markdown-to-html   → 转 HTML
-11. baoyu-post-to-wechat     → 发布到草稿箱
+2. [extract-svg.ts]          → 内嵌 SVG 转 PNG（降级方案时使用）
+3. [手动] 提取关键概念       → 分析内容
+4. [WebSearch] 补充资料      → 搜索官网
+5. [手动] 融合重写           → 创作文章
+6. humanizer-zh              → 去 AI 味（可选）
+7. baoyu-cover-image         → 生成封面图
+8. baoyu-compress-image      → 压缩封面图
+9. baoyu-image-gen           → 补充配图（可选）
+10. baoyu-compress-image     → 压缩文内图（可选）
+11. baoyu-markdown-to-html   → 转 HTML
+12. baoyu-post-to-wechat     → 发布到草稿箱
 ```
 
 ## 注意事项
@@ -538,6 +635,7 @@ media_id: {media_id}
 - 每个步骤的输出是下一个步骤的输入
 - 用户可在步骤之间介入（如修改重写内容、调整风格）
 - **封面图**：每篇文章必须生成封面图（baoyu-cover-image），保存到 `images/cover.png`
+- **内嵌 SVG**：网页中内嵌的架构图/流程图（`<svg>` 元素）会自动提取并转为 PNG，处理过程包括 CSS 变量替换、白色背景添加、中文字体渲染
 - **文内配图**：默认复用博客原图；原图不足时可调用 baoyu-image-gen 补充生成
 - 风格规范在 `references/styles/` 目录下，可按需扩展
 - **风格选择**：未指定 `--style` 时必须交互式询问，默认选择「生动科普」
