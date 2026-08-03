@@ -124,25 +124,38 @@ else:
 
 ### 0.3 生成输出目录名称
 
-根据抓取的博客内容生成目录名称：
-
 **命名规则**：`{YYYYMMDD_标题简称}`
 - `YYYYMMDD`：当天日期，如 `20260802`
-- `标题简称`：从博客标题提取 2-6 个关键词（中文）
+- `标题简称`：从博客标题提取 2-6 个字的中文关键词（纯中文，不含英文品牌名）
 
 **生成逻辑**：
 1. 抓取博客后，获取页面标题
-2. 从标题中提取核心关键词（2-6 个字）
+2. 从标题中提取核心中文关键词（2-6 个字）
 3. 组合为目录名：`20260802_DeepSeek安装配置`
 
 **示例**：
 | 博客标题 | 生成的目录名 |
 |---------|-------------|
+| RAG: Retrieval-Augmented Generation | `20260803_RAG知识检索` |
 | Codex Deepseek 配置 — 通过 CC Switch 中转 | `20260802_DeepSeek安装配置` |
 | React 18 新特性详解 | `20260802_React18新特性` |
 | 如何用 Python 爬取网页数据 | `20260802_Python爬取网页` |
 
-### 0.4 参数解析完成
+### 0.4 创建输出目录
+
+**Step 1 开始时必须立即执行**（在任何文件写入之前）：
+
+```bash
+# 获取当天日期
+DATE=$(date +%Y%m%d)
+# 创建目录（标题简称从博客标题提取）
+mkdir -p "00-草稿/${DATE}_{标题简称}/images"
+mkdir -p "00-草稿/${DATE}_{标题简称}/original"
+```
+
+> **必须使用 `mkdir -p` 显式创建目录**，不得跳过此步骤。后续所有步骤的文件输出路径均基于此目录。
+
+### 0.5 参数解析完成
 
 解析完成后，输出确认信息：
 
@@ -159,19 +172,22 @@ URL: https://xxx.blog
 
 ## Step 1: 抓取博客
 
+> **前置条件**：Step 0.4 的 `mkdir -p` 已执行，目录已创建。
+
 使用 `baoyu-url-to-markdown` 抓取博客内容和图片：
 
 ```bash
-# 解析 baoyu-url-to-markdown 的路径
-BAOYU_FETCH=".agents/skills/baoyu-url-to-markdown/scripts/baoyu-fetch"
+# 目录变量（后续步骤复用）
+DIR="00-草稿/${DATE}_{标题简称}"
 
 # 抓取内容 + 下载图片
-$BAOYU_FETCH <url> --output 00-草稿/{YYYYMMDD_标题简称}/original/article.md --download-media
+BAOYU_FETCH=".agents/skills/baoyu-url-to-markdown/scripts/baoyu-fetch"
+$BAOYU_FETCH <url> --output "${DIR}/original/article.md" --download-media
 ```
 
 **输出**：
-- `00-草稿/{YYYYMMDD_标题简称}/original/article.md` — 博客 Markdown 内容
-- `00-草稿/{YYYYMMDD_标题简称}/original/images/` — 下载的图片目录
+- `${DIR}/original/article.md` — 博客 Markdown 内容
+- `${DIR}/original/images/` — 下载的图片目录
 
 **质量检查**：抓取后检查内容完整性，如发现内容缺失或质量差，尝试使用 `--wait-for interaction` 模式重试。
 
@@ -184,7 +200,7 @@ $BAOYU_FETCH <url> --output 00-草稿/{YYYYMMDD_标题简称}/original/article.m
 3. **技术术语**：专业术语、缩写、新概念
 4. **数据引用**：文章中引用的数据、统计、研究
 
-**输出格式**（写入 `00-草稿/{YYYYMMDD_标题简称}/concepts.md`）：
+**输出格式**（写入 `${DIR}/concepts.md`）：
 
 ```markdown
 # 关键概念提取
@@ -218,7 +234,7 @@ $BAOYU_FETCH <url> --output 00-草稿/{YYYYMMDD_标题简称}/original/article.m
 - 概念名 + "definition" / "是什么"
 - 技术术语 + "documentation"
 
-**输出**：写入 `00-草稿/{YYYYMMDD_标题简称}/sources.md`
+**输出**：写入 `${DIR}/sources.md`
 
 ```markdown
 # 参考资料来源
@@ -302,7 +318,7 @@ $BAOYU_FETCH <url> --output 00-草稿/{YYYYMMDD_标题简称}/original/article.m
    - `--lang zh` — 中文标题
    - `--quality normal` — 无需高清，节省生成时间
    - `--quick` — 跳过确认，使用自动选择
-3. 封面图保存为 `00-草稿/{YYYYMMDD_标题简称}/images/cover.png`
+3. 封面图保存为 `${DIR}/images/cover.png`
 4. 在 `article.md` frontmatter 中添加 `cover: images/cover.png`
 
 ```bash
@@ -316,7 +332,7 @@ $BAOYU_FETCH <url> --output 00-草稿/{YYYYMMDD_标题简称}/original/article.m
 
 ```bash
 bun run .agents/skills/baoyu-compress-image/scripts/main.ts \
-  00-草稿/{YYYYMMDD_标题简称}/images/cover.png
+  ${DIR}/images/cover.png
 ```
 
 - 压缩后默认输出 WebP 格式（体积更小，公众号兼容）
@@ -359,7 +375,7 @@ bun run .agents/skills/baoyu-compress-image/scripts/main.ts \
 
 ```bash
 bun run .agents/skills/baoyu-compress-image/scripts/main.ts \
-  00-草稿/{YYYYMMDD_标题简称}/images/filename.jpg
+  ${DIR}/images/filename.jpg
 ```
 
 ## Step 6: 输出成品
@@ -370,7 +386,7 @@ bun run .agents/skills/baoyu-compress-image/scripts/main.ts \
 
 ```bash
 bun run .agents/skills/baoyu-markdown-to-html/scripts/main.ts \
-  00-草稿/{YYYYMMDD_标题简称}/article.md \
+  ${DIR}/article.md \
   --theme modern \
   --keep-title
 ```
@@ -384,7 +400,7 @@ bun run .agents/skills/baoyu-markdown-to-html/scripts/main.ts \
 示例：`20260802_Claude使用技巧`
 
 ```
-00-草稿/{YYYYMMDD_标题简称}/
+00-草稿/20260802_Claude使用技巧/
 ├── article.md              # Markdown 源文件
 ├── article.html            # 公众号兼容 HTML
 ├── images/                 # 图片目录
@@ -409,7 +425,7 @@ bun run .agents/skills/baoyu-markdown-to-html/scripts/main.ts \
 
 标题：{文章标题}
 风格：{指定风格}
-目录：00-草稿/{YYYYMMDD_标题简称}/
+目录：${DIR}/
 
 是否发布到微信公众号草稿箱？
 ```
@@ -428,7 +444,7 @@ bun run .agents/skills/baoyu-markdown-to-html/scripts/main.ts \
 ```bash
 # API 方式（首选 — 无需打开浏览器，静默发布）
 bun run .agents/skills/baoyu-post-to-wechat/scripts/wechat-api.ts \
-  00-草稿/{YYYYMMDD_标题简称}/article.html \
+  ${DIR}/article.html \
   --theme modern
 ```
 
@@ -437,7 +453,7 @@ bun run .agents/skills/baoyu-post-to-wechat/scripts/wechat-api.ts \
 ```bash
 # 浏览器方式（需手动操作，自动打开公众号后台）
 bun run .agents/skills/baoyu-post-to-wechat/scripts/wechat-article.ts \
-  --markdown 00-草稿/{YYYYMMDD_标题简称}/article.md \
+  --markdown ${DIR}/article.md \
   --theme modern
 ```
 
