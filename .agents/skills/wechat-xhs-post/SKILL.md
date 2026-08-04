@@ -32,11 +32,13 @@ description: "微信公众号文章编排器，复用已有小红书图文素材
 
 | 参数 | 说明 |
 |------|------|
-| `<topic-slug>` | `image-cards/` 下的目录名（必填） |
+| `<topic-slug>` | `image-cards/` 下的素材目录名（必填，素材来源标识） |
 | `--publish` | 跳过 Step 8 的交互式确认，直接发布到草稿箱 |
 | `--dry-run` | 只生成文章不发布 |
 | `--style <style>` | 公众号文章风格，可选值见下方"风格预设"；不传则交互式询问 |
-| `--title <title>` | 手动指定标题（默认从 `summary.md` 提取） |
+| `--title <title>` | 手动指定标题（默认从 `summary.md` 提取，也用于确定输出目录的标题简称） |
+
+> 输出目录 `00-草稿/{YYYYMMDD_标题简称}/` 中的标题简称来自 `summary.md` 主选标题（或 `--title`），与 `<topic-slug>` 无关。
 
 ## 前置依赖
 
@@ -128,15 +130,15 @@ image-cards/<topic>/
 ## 工作流全景
 
 ```
-image-cards/<topic>/
-├── summary.md        ──→  Step 2: 读取素材
-├── compress/*.webp   ──→  Step 4: 复制图片
+image-cards/<topic-slug>/
+├── summary.md        ──→  Step 2: 读取素材 + 提取标题简称
+├── compress/*.webp   ──→  Step 2: 复制图片至输出目录
 │
-├─ Step 1: 解析输入 → 确定 topic-slug，验证目录完整性
-├─ Step 2: 读取素材 → 解析 summary.md + compress/ 图片清单
+├─ Step 1: 解析输入 → 确定 topic-slug（素材来源标识），验证目录完整性
+├─ Step 2: 读取素材 → 解析 summary.md，提取标题简称，创建 00-草稿/{YYYYMMDD_标题简称}/
 ├─ Step 3: 扩写文章 → 小红书短文案 → 公众号长文
-│   ├─ 输出到 00-草稿/{topic-slug}/article-raw.md
-│   └─ 复制图片至 00-草稿/{topic-slug}/images/
+│   ├─ 输出到 00-草稿/{YYYYMMDD_标题简称}/article-raw.md
+│   └─ 复制图片至 00-草稿/{YYYYMMDD_标题简称}/images/
 ├─ Step 4: 格式化 → baoyu-format-markdown
 ├─ Step 5: 去AI味 → humanizer-zh
 ├─ Step 6: 图片格式转换 → WebP 全部转 PNG
@@ -146,13 +148,19 @@ image-cards/<topic>/
 ```
 
 ## 输出目录
-所有产物放在 `00-草稿/{topic-slug}/` 目录下：
+所有产物统一放在 `00-草稿/{YYYYMMDD_标题简称}/` 目录下：
 ```
-00-草稿/{topic-slug}/
+00-草稿/{YYYYMMDD_标题简称}/
 ├── article.md              ← 配图版终稿（WeChat 公众号长文，图片引用 .png）
 ├── article.html            ← 公众号兼容 HTML
 └── images/                 ← 图片已全部转为 PNG（兼容微信 API）
 ```
+
+**目录命名规则**：`{YYYYMMDD_标题简称}`
+- `YYYYMMDD`：当天日期，如 `20260804`
+- `标题简称`：从 `summary.md` 的**主选标题**提取 2-6 个字的核心中文关键词（中文为主，可含英文品牌名）
+- 输出目录在 Step 2 读取素材后立即创建（见 Step 2 的"创建输出目录"）
+- `<topic-slug>` 仅作为 `image-cards/` 素材来源标识，与输出目录名解耦
 
 ## 详细工作流程
 
@@ -206,6 +214,10 @@ image-cards/<topic>/
 - 若用户未提供 slug 或使用 `--list`，动态读取 `image-cards/` 下列出所有可选主题供用户选择
 - 列出内容基于 `image-cards/` 实际目录，**不包含任何硬编码示例**
 
+**输出目录命名**：
+- 输出目录为 `00-草稿/{YYYYMMDD_标题简称}/`（与 `wechat-copywriter` 一致）
+- `标题简称` 从 `summary.md` 主选标题提取，具体规则见 Step 2 的"创建输出目录"
+
 ### Step 2: 读取素材
 
 **读取内容来源**（优先级）：
@@ -230,6 +242,35 @@ image-cards/<topic>/compress/
 
 记录每张图片的文件名、序号、路径，供后续扩写时内嵌引用。
 
+**创建输出目录**（读取素材后立即执行，在任何文件写入之前）：
+
+1. **提取主选标题**：从 `summary.md` 的标题区找到含"主选"的行，取其冒号后的标题文本。常见格式：
+   - `- 主选：为什么吃完饭会困成狗？你的大脑被"血糖"背叛了！`
+   - `**主选**：为什么你越想压抑一个念头，大脑就越疯狂地想它？`
+2. **提取标题简称**：从主选标题中提取 2-6 个字的核心中文关键词（中文为主，可含英文品牌名），如：
+   - `为什么吃完饭会困成狗？...` → `饭后困倦` 或 `血糖困倦`
+   - `为什么你越想压抑一个念头...` → `白熊效应`
+3. **回退规则**（`summary.md` 缺失或无主选标题时）：
+   - 优先用 `--title` 参数提取标题简称
+   - 其次用 `<topic-slug>` 中 `_` 后的中文部分（若 topic-slug 本身是 `YYYYMMDD_标题` 格式）
+   - 以上都不可用 → 询问用户确认文章标题
+4. **创建目录**（必须用 `mkdir -p` 显式创建，不得跳过）：
+   ```bash
+   # 获取当天日期
+   DATE=$(date +%Y%m%d)
+   # 创建输出目录（标题简称从主选标题提取中文关键词）
+   mkdir -p "00-草稿/${DATE}_{标题简称}/images"
+   ```
+
+   **⛔ 目录命名硬性规则**：
+   - 输出目录**必须**是 `00-草稿/{YYYYMMDD_标题简称}/` 格式（中文标题简称）
+   - **禁止**直接把 `<topic-slug>`（image-cards 英文素材目录名）当作输出目录名，如 `blood-sugar-drowsiness`、`20260802_白熊效应` 都不能直接用作草稿目录名——必须以 `YYYYMMDD_标题简称` 重新命名
+   - 配图目录**必须**是 `images/`，**禁止**用 `imgs/`
+   - 示例：`blood-sugar-drowsiness` 的 summary.md 主选标题"为什么吃完饭会困成狗？" → 输出目录 `20260804_饭后困倦/`
+
+5. 后续所有步骤的文件输出路径均基于此目录。
+6. **执行后立即自检**：运行 `ls 00-草稿/` 确认刚创建的目录是 `YYYYMMDD_中文标题简称` 格式；若不符，立即重命名修正后再继续。
+
 ### Step 3: 扩写文章
 
 将小红书风格的短文案扩展为公众号长文。**根据 Step 1 确定的风格**，加载对应的写作指令。
@@ -252,7 +293,7 @@ image-cards/<topic>/compress/
 
 #### 输出
 
-- 文件：`00-草稿/{topic-slug}/article-raw.md`
+- 文件：`00-草稿/{YYYYMMDD_标题简称}/article-raw.md`
 - 封面图在 frontmatter 中指定：`cover: images/01-cover-xxx.webp`
 
 #### 风格化扩写指令
@@ -353,7 +394,7 @@ image-cards/<topic>/compress/
 
 ```bash
 bun run .agents/skills/baoyu-format-markdown/scripts/main.ts \
-  00-草稿/{topic-slug}/article-raw.md
+  00-草稿/{YYYYMMDD_标题简称}/article-raw.md
 ```
 
 输出：`article-raw-formatted.md`
@@ -361,8 +402,8 @@ bun run .agents/skills/baoyu-format-markdown/scripts/main.ts \
 执行者将格式化后的文件重命名为 `article.md`（覆盖同目录下的 `article.md`），后续步骤以 `article.md` 为输入。
 
 ```bash
-mv 00-草稿/{topic-slug}/article-raw-formatted.md \
-   00-草稿/{topic-slug}/article.md
+mv 00-草稿/{YYYYMMDD_标题简称}/article-raw-formatted.md \
+   00-草稿/{YYYYMMDD_标题简称}/article.md
 ```
 
 ### Step 5: 去 AI 味（必选）
@@ -384,7 +425,7 @@ mv 00-草稿/{topic-slug}/article-raw-formatted.md \
 
 ```bash
 # 批量转换 images/ 目录下所有 webp 为 png
-for img in 00-草稿/{topic-slug}/images/*.webp; do
+for img in 00-草稿/{YYYYMMDD_标题简称}/images/*.webp; do
   bun run .agents/skills/baoyu-compress-image/scripts/main.ts \
     "$img" -f png --keep
 done
@@ -401,9 +442,9 @@ done
 ```bash
 # 替换 article.md 中所有图片引用从 .webp 改为 .png
 # 覆盖三种情况：正文图片、frontmatter cover、frontmatter 引号包裹的值
-sed -i '' 's/\.webp)/.png)/g' 00-草稿/{topic-slug}/article.md
-sed -i '' 's/\.webp"/.png"/g' 00-草稿/{topic-slug}/article.md
-sed -i '' 's/\.webp$/.png/' 00-草稿/{topic-slug}/article.md
+sed -i '' 's/\.webp)/.png)/g' 00-草稿/{YYYYMMDD_标题简称}/article.md
+sed -i '' 's/\.webp"/.png"/g' 00-草稿/{YYYYMMDD_标题简称}/article.md
+sed -i '' 's/\.webp$/.png/' 00-草稿/{YYYYMMDD_标题简称}/article.md
 ```
 
 > 使用 `sed` 或逐行编辑工具完成替换，确保 cover frontmatter 和正文中的图片引用都被更新。
@@ -422,13 +463,13 @@ sed -i '' 's/\.webp$/.png/' 00-草稿/{topic-slug}/article.md
 
 ```bash
 bun run .agents/skills/baoyu-markdown-to-html/scripts/main.ts \
-  00-草稿/{topic-slug}/article.md \
+  00-草稿/{YYYYMMDD_标题简称}/article.md \
   --theme <风格对应theme> --color <风格对应color> \
   --keep-title
 ```
 
 - `--keep-title` 保留文中标题
-- 输出：`00-草稿/{topic-slug}/article.html`
+- 输出：`00-草稿/{YYYYMMDD_标题简称}/article.html`
 
 ### Step 8: 发布到公众号草稿箱
 
@@ -449,7 +490,7 @@ bun run .agents/skills/baoyu-markdown-to-html/scripts/main.ts \
 | 选项 | 行为 |
 |------|------|
 | **1. 发布到草稿箱** | 执行下方 API 命令，提交到草稿箱 |
-| **2. 预览 HTML** | 不调用 API，提示用户打开 `00-草稿/{topic-slug}/article.html` 查看效果 |
+| **2. 预览 HTML** | 不调用 API，提示用户打开 `00-草稿/{YYYYMMDD_标题简称}/article.html` 查看效果 |
 | **3. 跳过发布** | 跳过此步骤，直接进入 Step 9 完成报告 |
 
 **`--publish` 参数**：跳过交互式确认，直接执行发布。
@@ -461,12 +502,12 @@ bun run .agents/skills/baoyu-markdown-to-html/scripts/main.ts \
 ```bash
 # API 方式（需配置 WECHAT_APP_ID + WECHAT_APP_SECRET）
 bun run .agents/skills/baoyu-post-to-wechat/scripts/wechat-api.ts \
-  00-草稿/{topic-slug}/article.html \
+  00-草稿/{YYYYMMDD_标题简称}/article.html \
   --theme <风格对应theme>
 
 # 浏览器方式（手动操作）
 bun run .agents/skills/baoyu-post-to-wechat/scripts/wechat-article.ts \
-  --markdown 00-草稿/{topic-slug}/article.md \
+  --markdown 00-草稿/{YYYYMMDD_标题简称}/article.md \
   --theme <风格对应theme>
 ```
 
@@ -480,17 +521,17 @@ bun run .agents/skills/baoyu-post-to-wechat/scripts/wechat-article.ts \
 ```
 ✅ Image Cards → 公众号 完成！
 
-Topic: <topic-slug>
-风格: <style>（<风格描述>）
+文章标题: <主选标题>
 素材来源: image-cards/<topic-slug>/
   ├─ summary.md ✓（3 段式内容）
   └─ compress/  ✓（N 张压缩图）
 
-输出目录: 00-草稿/<topic-slug>/
+输出目录: 00-草稿/{YYYYMMDD_标题简称}/
   ├─ article.md        ← 公众号长文（含图片引用）
   ├─ article.html      ← 公众号兼容 HTML
   └─ images/           ← 共 N 张图片
 
+风格: <style>（<风格描述>）
 发布状态: [已保存到草稿箱 / 已发布 / --dry-run 未发布]
 ```
 
@@ -511,18 +552,18 @@ Topic: <topic-slug>
 
 ```
 image-cards/<topic>/compress/*.webp
-    ↓ Step 3: 复制到 00-草稿/images/
-00-草稿/<topic>/images/*.webp
+    ↓ Step 2/3: 复制到 00-草稿/{YYYYMMDD_标题简称}/images/
+00-草稿/{YYYYMMDD_标题简称}/images/*.webp
     ↓ Step 6: 批量转 PNG + 更新文章引用
-00-草稿/<topic>/images/*.png  ← 最终发布用的图片
+00-草稿/{YYYYMMDD_标题简称}/images/*.png  ← 最终发布用的图片
 ```
 
 ### 已有 compress/*.webp 的情况（最常见）
-1. 复制到 `00-草稿/{topic-slug}/images/`
+1. 复制到 `00-草稿/{YYYYMMDD_标题简称}/images/`
 2. Step 6 中统一转换为 PNG，并更新 `article.md` 中的图片引用路径
 
 ### 仅原始 PNG/JPG 的情况（无需转换）
-- 直接复制到 `00-草稿/{topic-slug}/images/`
+- 直接复制到 `00-草稿/{YYYYMMDD_标题简称}/images/`
 - 已在 PNG 格式，跳过 Step 6 的格式转换
 
 ### 图片文件名映射表
@@ -535,7 +576,7 @@ image-cards/<topic>/compress/*.webp
 | 2 | compress/02-content-xxx.webp | images/02-content-xxx.webp | 文内图 |
 | ... | ... | ... | ... |
 
-映射表写入 `00-草稿/{topic-slug}/images/README.md`，方便追踪。
+映射表写入 `00-草稿/{YYYYMMDD_标题简称}/images/README.md`，方便追踪。
 
 ## 快速开始示例
 

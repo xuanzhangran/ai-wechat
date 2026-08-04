@@ -85,24 +85,41 @@ function extractSVGs(html: string): string[] {
  * 为 SVG 添加白色背景和中文字体支持
  */
 function prepareSVGForRender(svg: string): string {
-  // 提取 viewBox 获取尺寸
-  const vbMatch = svg.match(/viewBox="([^"]*)"/);
+  // 提取 viewBox 获取尺寸（支持负数与浮点数）
+  const vbMatch = svg.match(
+    /viewBox="([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)"/
+  );
   if (vbMatch) {
-    const [, vb] = vbMatch;
-    const [x, y, w, h] = vb.split(" ").map(Number);
-    // 在第一个子元素前插入白色背景矩形
-    svg = svg.replace(
-      /<svg([^>]*)>/,
-      `<svg$1><rect x="${x}" y="${y}" width="${w}" height="${h}" fill="white"/>`
-    );
-  }
-
-  // 添加中文字体
-  if (!svg.includes("font-family")) {
-    svg = svg.replace(
-      /<svg/,
-      `<svg style="font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;"`
-    );
+    const [, x, y, w, h] = vbMatch;
+    const rootOpen = svg.match(/^<svg[^>]*>/);
+    if (rootOpen) {
+      let tag = rootOpen[0];
+      // 将 width="100%"（或缺失尺寸）替换为显式像素，保证 librsvg 正确渲染
+      if (/width="/.test(tag)) {
+        tag = tag.replace(/width="[^"]*"/, `width="${w}" height="${h}"`);
+      } else {
+        tag = tag.replace(/>$/, ` width="${w}" height="${h}">`);
+      }
+      // 添加中文字体：合并进已有 style，否则追加
+      const fontFamily =
+        "-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif";
+      if (!svg.includes("font-family")) {
+        if (/style="/.test(tag)) {
+          tag = tag.replace(
+            /style="([^"]*)"/,
+            (_m, existing: string) =>
+              `style="${existing}${existing && !existing.endsWith(";") ? ";" : ""}font-family:${fontFamily};"`
+          );
+        } else {
+          tag = tag.replace(/>$/, ` style="font-family: ${fontFamily};"`);
+        }
+      }
+      // 一次性替换根开标签，并插入白色背景矩形
+      svg = svg.replace(
+        /^<svg[^>]*>/,
+        `${tag}><rect x="${x}" y="${y}" width="${w}" height="${h}" fill="white"/>`
+      );
+    }
   }
 
   return svg;
@@ -201,7 +218,9 @@ async function main() {
     svg = svg.replace(/<\?xml[^?]*\?>\s*/, "");
 
     // 获取 viewBox 尺寸
-    const vbMatch = svg.match(/viewBox="[\d.]+\s+[\d.]+\s+([\d.]+)\s+([\d.]+)"/);
+    const vbMatch = svg.match(
+      /viewBox="[-\d.]+\s+[-\d.]+\s+([-\d.]+)\s+([-\d.]+)"/
+    );
     const width = vbMatch ? Math.round(parseFloat(vbMatch[1])) : 680;
     const height = vbMatch ? Math.round(parseFloat(vbMatch[2])) : 400;
 

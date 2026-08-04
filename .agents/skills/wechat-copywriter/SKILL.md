@@ -28,13 +28,14 @@ metadata:
 ```
 用户输入: "仿写 https://xxx.blog"
   │
-  ├─ Step 0: 参数解析 → 提取 URL、交互式选择风格、确定输出目录
-  ├─ Step 1: 抓取博客 → baoyu-url-to-markdown (内容 + 图片)
-  │           └─ 降级: webfetch + 提取图片 URL + 内嵌 SVG 转 PNG + 下载图片
+  ├─ Step 0: 参数解析 → 提取 URL、交互式选择风格、询问是否抓图、确定输出目录
+  ├─ Step 1: 抓取博客 → baoyu-url-to-markdown
+  │           ├─ 抓原图模式: 内容 + 图片下载 + 内嵌 SVG 转 PNG（降级: webfetch + curl）
+  │           └─ AI配图模式: 仅抓文本内容（不下载图片）
   ├─ Step 2: 识别关键概念 → 提取核心术语、产品名、技术点
   ├─ Step 3: 补充资料 → 搜索官网、交叉校验、补充权威信息
   ├─ Step 4: 重写文章 → 融合两源内容，按指定风格创作
-  ├─ Step 5: 图片排版 → 封面图生成 + 引用原图 + 补充配图
+  ├─ Step 5: 图片排版 → 封面图生成 + （抓原图模式: 引用原图 / AI配图模式: AI 生成配图）
   ├─ Step 6: 输出成品 → Markdown + 公众号兼容 HTML
   └─ Step 7: 发布草稿 → baoyu-post-to-wechat（API 优先）→ 确认发布
 ```
@@ -55,7 +56,7 @@ metadata:
 | `<url>` | 博客链接（必填） | - |
 | `--style <风格>` | 指定文风 | `生动科普` |
 | `--output <目录>` | 输出目录 | `00-草稿/{YYYYMMDD_标题简称}/` |
-| `--no-images` | 不下载图片 | `false` |
+| `--no-images` | 不抓取博客图片（跳过询问，后续由 AI 生成配图） | `false` |
 | `--no-humanize` | 跳过去 AI 味 | `false` |
 | `--publish` | 跳过确认直接发布到草稿箱 | `false` |
 | `--dry-run` | 仅生成不发布 | `false` |
@@ -123,7 +124,42 @@ else:
     style = extract_style_from_input(user_input)
 ```
 
-### 0.3 生成输出目录名称
+### 0.3 询问是否抓取博客图片
+
+**当用户未指定 `--no-images` 参数时**，在风格选择之后、生成目录名之前，**必须**交互式询问用户是否需要抓取博客图片。
+
+使用 `AskUserQuestion` 工具询问用户：
+
+```
+请选择图片获取方式：
+```
+
+| 选项 | 后续影响 |
+|------|---------|
+| 需要抓取图片（推荐） | Step 1 下载博客图片 + SVG 转 PNG；Step 5 优先引用原图 |
+| 不需要，AI 配图 | Step 1 仅抓取文本；Step 5 全部由 AI 生成配图 |
+
+**实现逻辑**：
+```python
+if "--no-images" in user_input:
+    image_mode = "AI配图"   # 指定 --no-images 则跳过询问
+else:
+    image_mode = ask_user_question(
+        header="抓取图片",
+        question="是否需要抓取博客中的图片？",
+        options=[
+            {"label": "需要（推荐）", "description": "抓取博客原图并复用，保留原文视觉内容"},
+            {"label": "不需要，AI 配图", "description": "不抓取博客图片，后续由 AI 生成配图"}
+        ],
+        default="需要（推荐）"
+    )
+```
+
+**`{图片模式}` 贯穿后续步骤**：
+- `抓原图`：Step 1 下载图片并处理 SVG；Step 5.3 引用原图，5.4 仅在原图不足时补充
+- `AI配图`：Step 1 仅抓文本；Step 5 跳过引用原图，5.4 必选 AI 生成配图（参考 wechat-auto-creator Step 5 流程）
+
+### 0.4 生成输出目录名称
 
 **命名规则**：`{YYYYMMDD_标题简称}`
 - `YYYYMMDD`：当天日期，如 `20260802`
@@ -142,7 +178,7 @@ else:
 | React 18 新特性详解 | `20260802_React18新特性` |
 | 如何用 Python 爬取网页数据 | `20260802_Python爬取网页` |
 
-### 0.4 创建输出目录
+### 0.5 创建输出目录
 
 **Step 1 开始时必须立即执行**（在任何文件写入之前）：
 
@@ -156,7 +192,7 @@ mkdir -p "00-草稿/${DATE}_{标题简称}/original"
 
 > **必须使用 `mkdir -p` 显式创建目录**，不得跳过此步骤。后续所有步骤的文件输出路径均基于此目录。
 
-### 0.5 参数解析完成
+### 0.6 参数解析完成
 
 解析完成后，输出确认信息：
 
@@ -165,6 +201,7 @@ mkdir -p "00-草稿/${DATE}_{标题简称}/original"
 
 URL: https://xxx.blog
 风格: 生动科普
+图片模式: 抓原图 / AI配图
 输出目录: 00-草稿/20260802_DeepSeek安装配置/
 发布模式: 询问确认
 
@@ -173,28 +210,35 @@ URL: https://xxx.blog
 
 ## Step 1: 抓取博客
 
-> **前置条件**：Step 0.4 的 `mkdir -p` 已执行，目录已创建。
+> **前置条件**：Step 0.5 的 `mkdir -p` 已执行，目录已创建。
+>
+> **图片模式**：根据 Step 0.3 的询问结果执行对应分支（`抓原图` / `AI配图`）。
 
 ### 1.1 主方案：baoyu-url-to-markdown
 
-使用 `baoyu-url-to-markdown` 抓取博客内容和图片：
+使用 `baoyu-url-to-markdown` 抓取博客内容，**根据图片模式决定是否下载图片**：
 
 ```bash
 # 目录变量（后续步骤复用）
 DIR="00-草稿/${DATE}_{标题简称}"
 
-# 抓取内容 + 下载图片
 BAOYU_FETCH=".agents/skills/baoyu-url-to-markdown/scripts/baoyu-fetch"
+
+# 抓原图模式：抓取内容 + 下载图片
 $BAOYU_FETCH <url> --output "${DIR}/original/article.md" --download-media
+
+# AI配图模式：仅抓取文本内容，不下载图片
+# $BAOYU_FETCH <url> --output "${DIR}/original/article.md"
 ```
 
 **输出**：
 - `${DIR}/original/article.md` — 博客 Markdown 内容
-- `${DIR}/original/images/` — 下载的图片目录
+- `抓原图` 模式额外输出：`${DIR}/original/images/` — 下载的图片目录
+- `AI配图` 模式：不下载图片，跳过 1.2/1.3 的图片处理
 
 ### 1.2 降级方案：webfetch + curl 下载图片
 
-当 `baoyu-url-to-markdown` 失败（reCAPTCHA、JS 渲染等）时，使用降级方案：
+**仅 `抓原图` 模式执行**。当 `baoyu-url-to-markdown` 失败（reCAPTCHA、JS 渲染等）时，使用降级方案：
 
 **步骤 A：用 webfetch 抓取 HTML**
 
@@ -268,6 +312,8 @@ bun run .agents/skills/wechat-copywriter/scripts/extract-svg.ts \
 
 ### 1.3 图片来源优先级
 
+**仅 `抓原图` 模式适用**：
+
 | 优先级 | 来源 | 说明 |
 |--------|------|------|
 | 1 | baoyu-url-to-markdown | 首选，自动下载内容+图片 |
@@ -278,12 +324,13 @@ bun run .agents/skills/wechat-copywriter/scripts/extract-svg.ts \
 
 抓取后检查内容完整性，如发现内容缺失或质量差，尝试使用 `--wait-for interaction` 模式重试。
 
-**检查清单**：
+**检查清单**（按图片模式对应勾选）：
 - [ ] 文章标题是否完整
 - [ ] 正文内容是否丢失
-- [ ] 图片是否全部下载
-- [ ] 内嵌 SVG 是否已提取并转换为 PNG（如有）
-- [ ] 图片引用路径是否正确
+- `抓原图` 模式额外检查：
+  - [ ] 图片是否全部下载
+  - [ ] 内嵌 SVG 是否已提取并转换为 PNG（如有）
+  - [ ] 图片引用路径是否正确
 
 ## Step 2: 识别关键概念
 
@@ -398,6 +445,8 @@ bun run .agents/skills/wechat-copywriter/scripts/extract-svg.ts \
 
 如需 AI 重新生成配图（而非使用原图），生成配图提示词到 `image-prompts.md`。
 
+> **AI 配图模式**：配图提示词统一在 Step 5.4 生成（含 `baoyu-article-illustrator` 分析），此处无需重复。
+
 ## Step 5: 图片排版
 
 ### 5.1 封面图生成（必须）
@@ -432,7 +481,9 @@ bun run .agents/skills/baoyu-compress-image/scripts/main.ts \
 - 压缩后默认输出 WebP 格式（体积更小，公众号兼容）
 - 如需保留 PNG 格式，追加 `-f png --keep`
 
-### 5.3 引用原图
+### 5.3 引用原图（仅 `抓原图` 模式）
+
+**`AI配图` 模式跳过本步，直接进入 5.4。**
 
 将 Step 1 下载的博客原图复制到 `images/` 目录，在 `article.md` 中引用：
 
@@ -444,7 +495,11 @@ bun run .agents/skills/baoyu-compress-image/scripts/main.ts \
 1. 博客原图（Step 1 下载的 `original/images/`）— 默认使用
 2. 补充生成的配图（Step 5.4 生成）— 原图不足时补充
 
-### 5.4 文内配图补充（可选）
+### 5.4 文内配图（按图片模式）
+
+**按 `{图片模式}` 走对应分支：**
+
+#### `抓原图` 模式：AI 补充配图（可选）
 
 当原博客图片数量不足（少于 2 张）或缺少关键段落配图时，调用 AI 补充生成：
 
@@ -462,6 +517,27 @@ bun run .agents/skills/baoyu-compress-image/scripts/main.ts \
 - 补充配图风格应与封面图保持一致（可用封面图作为 `--ref` 锚定风格）
 - 文内配图使用 `--quality normal`，比例 `--ar 16:9` 或 `--ar 1:1`
 - 至少生成 1 张补充配图
+
+#### `AI配图` 模式：AI 生成全部配图（必须）
+
+**文章没有可用原图，全部文内配图由 AI 生成**，流程参考 `wechat-auto-creator` 的 Step 5：
+
+1. **文内配图分析**：调用 `baoyu-article-illustrator` 技能
+   - 分析文章结构，识别需要配图的位置（每个主要段落 1 张）
+   - 确定每张图的 Type × Style × Palette 三维度
+   - 配图提示词写入 `image-prompts.md`，保存到 `${DIR}/image-prompts.md`
+2. **批量生图**：调用 `baoyu-image-gen` 批量生成
+   - Provider 优先级（依次尝试，失败自动回退）：`openai`（gpt-image-2）→ `dashscope`（通义万象）→ `google`（Gemini）
+   - 封面图 `--quality normal`、`--ar 16:9`；文内图 `--quality normal`、`--ar 16:9` 或 `--ar 1:1`
+   - **至少生成 2 张文内图**（1 张封面 + 至少 2 张文内图）
+   - 文内图用封面图作为 `--ref` 锚定风格一致性
+3. 图片保存到 `${DIR}/images/` 目录
+4. 生图完成后将 `article.md` 中的图片占位符替换为实际图片路径
+
+**要求**：
+- 文内配图风格必须与封面图保持一致（用封面图作为 `--ref`）
+- 每张配图在正文中找到合适位置插入（每段后），确保图文对应
+- 若某个 Provider 全部失败，依次回退；全部失败则用占位符 `![描述](images/{filename})` 标记，供用户手工补图
 
 ### 5.5 图片压缩（可选）
 
@@ -497,18 +573,22 @@ bun run .agents/skills/baoyu-markdown-to-html/scripts/main.ts \
 00-草稿/20260802_Claude使用技巧/
 ├── article.md              # Markdown 源文件
 ├── article.html            # 公众号兼容 HTML
+├── image-prompts.md        # 配图提示词（AI 配图模式必须有）
 ├── images/                 # 图片目录
 │   ├── cover.png           # 封面图（baoyu-cover-image 生成）
-│   ├── image1.jpg          # 博客原图
-│   ├── arch-1.png          # 内嵌 SVG 转换（如有）
-│   ├── arch-2.png          # 内嵌 SVG 转换（如有）
-│   └── image2.png          # 补充配图（如有）
+│   ├── image1.jpg          # 博客原图（抓原图模式）
+│   ├── arch-1.png          # 内嵌 SVG 转换（抓原图模式，如有）
+│   └── image2.png          # AI 生成配图（AI 配图模式 / 补充配图）
 ├── original/               # 原始抓取内容（可删除）
 │   ├── article.md
-│   └── images/
+│   └── images/             # 抓原图模式才有下载的图片
 ├── sources.md              # 参考资料来源
 └── concepts.md             # 关键概念提取
 ```
+
+> **两种图片模式的结构差异**：
+> - `抓原图`：`original/images/` 有下载的博客图片，`images/` 以原图为主
+> - `AI配图`：`original/images/` 为空（未下载图片），`images/` 全部为 AI 生成配图，`image-prompts.md` 必须有
 
 ## Step 7: 发布到公众号草稿箱
 
@@ -614,19 +694,20 @@ media_id: {media_id}
 ## 依赖技能调用顺序
 
 ```
-0. [参数解析] 提取URL、交互式选择风格  → 确定输入参数
-1. baoyu-url-to-markdown     → 抓取内容
-2. [extract-svg.ts]          → 内嵌 SVG 转 PNG（降级方案时使用）
+0. [参数解析] 提取URL、交互式选择风格、询问是否抓图 → 确定输入参数 + 图片模式
+1. baoyu-url-to-markdown     → 抓取内容（抓原图模式含下载图片）
+2. [extract-svg.ts]          → 内嵌 SVG 转 PNG（仅抓原图模式）
 3. [手动] 提取关键概念       → 分析内容
 4. [WebSearch] 补充资料      → 搜索官网
 5. [手动] 融合重写           → 创作文章
 6. humanizer-zh              → 去 AI 味（可选）
 7. baoyu-cover-image         → 生成封面图
 8. baoyu-compress-image      → 压缩封面图
-9. baoyu-image-gen           → 补充配图（可选）
-10. baoyu-compress-image     → 压缩文内图（可选）
-11. baoyu-markdown-to-html   → 转 HTML
-12. baoyu-post-to-wechat     → 发布到草稿箱
+9. baoyu-article-illustrator → 文内配图分析（AI 配图模式必选）
+10. baoyu-image-gen          → 生成配图（抓原图模式补充 / AI 配图模式全部生成）
+11. baoyu-compress-image     → 压缩文内图（可选）
+12. baoyu-markdown-to-html   → 转 HTML
+13. baoyu-post-to-wechat     → 发布到草稿箱
 ```
 
 ## 注意事项
@@ -635,8 +716,11 @@ media_id: {media_id}
 - 每个步骤的输出是下一个步骤的输入
 - 用户可在步骤之间介入（如修改重写内容、调整风格）
 - **封面图**：每篇文章必须生成封面图（baoyu-cover-image），保存到 `images/cover.png`
-- **内嵌 SVG**：网页中内嵌的架构图/流程图（`<svg>` 元素）会自动提取并转为 PNG，处理过程包括 CSS 变量替换、白色背景添加、中文字体渲染
-- **文内配图**：默认复用博客原图；原图不足时可调用 baoyu-image-gen 补充生成
+- **图片模式**：Step 0.3 交互式询问用户是否抓取博客图片；`--no-images` 参数可跳过询问直接走 AI 配图模式
+  - `抓原图`：Step 1 下载图片 + 内嵌 SVG 转 PNG，Step 5 优先复用原图
+  - `AI配图`：Step 1 仅抓文本，Step 5 全部由 AI 生成配图（参考 wechat-auto-creator Step 5 流程）
+- **内嵌 SVG**：网页中内嵌的架构图/流程图（`<svg>` 元素）会自动提取并转为 PNG（仅抓原图模式），处理过程包括 CSS 变量替换、白色背景添加、中文字体渲染
+- **文内配图**：抓原图模式默认复用博客原图，原图不足时补充生成；AI 配图模式全部由 baoyu-image-gen 生成（至少 2 张文内图）
 - 风格规范在 `references/styles/` 目录下，可按需扩展
 - **风格选择**：未指定 `--style` 时必须交互式询问，默认选择「生动科普」
 - **发布前必须确认**：Step 7 会交互式询问用户是否确认发布，除非指定 `--publish` 参数

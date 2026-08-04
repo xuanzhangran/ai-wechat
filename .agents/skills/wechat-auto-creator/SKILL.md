@@ -13,7 +13,7 @@ description: "微信公众号自动图文编排器 — 从一句话选题到发�
 ```
 用户输入 "写一篇关于XXX的文章"
   │
-  ├─ Step 1: 解析输入 → 确定选题slug + 文章类型
+  ├─ Step 1: 解析输入 → 确定标题简称 + 文章类型
   ├─ Step 2: 写稿 → 按风格文件生成初稿
   ├─ Step 3: 格式化 → baoyu-format-markdown
   ├─ Step 4: 去AI味 → humanizer-zh（观点原创型）
@@ -24,9 +24,9 @@ description: "微信公众号自动图文编排器 — 从一句话选题到发�
 ```
 
 ## 输出目录
-所有产物统一放在 `00-草稿/{topic-slug}/` 目录下：
+所有产物统一放在 `00-草稿/{YYYYMMDD_标题简称}/` 目录下：
 ```
-00-草稿/{topic-slug}/
+00-草稿/{YYYYMMDD_标题简称}/
 ├── article.md              ← 配图版终稿
 ├── article.html            ← 公众号兼容 HTML
 ├── image-prompts.md        ← 合并所有图片提示词（封面 + 文内图）
@@ -62,11 +62,38 @@ description: "微信公众号自动图文编排器 — 从一句话选题到发�
 |------|---------|
 | `--prompt "..."` | 取 `--prompt` 后面的全部内容 |
 | 位置参数 | 取第一个非选项字符串参数 |
-| `{slug}` | 从主题生成 2-4 词 kebab-case slug（中文翻译成英文） |
+| `{YYYYMMDD}` | 当天日期，如 `20260804` |
+| `{标题简称}` | 从选题/主题提取 2-6 个字的中文关键词（中文为主，可含英文品牌名，如 `手机幻觉`、`DeepSeek安装配置`） |
 | `--publish` | 标记为自动发布（跳过发布确认，直接调用 API） |
 | `--dry-run` | 标记为仅生成不发布 |
 | 链接/URL/字幕文件 | 自动判定为访谈重播型 |
 | 纯文字描述 | 自动判定为观点原创型 |
+
+#### 生成输出目录（Step 1 开始时必须立即执行）
+
+**⛔ 目录命名硬性规则**：输出目录**必须**是 `00-草稿/{YYYYMMDD_标题简称}/` 格式。
+- `YYYYMMDD`：当天日期，如 `20260804`
+- `标题简称`：从选题/主题提取 2-6 个字的核心中文关键词（中文为主，可含英文品牌名）
+- **禁止**使用英文 kebab-case slug 或纯英文名作目录名（如 `claude-code-agent-view`、`phone-hallucination`）
+- 目录内配图目录**必须**是 `images/`，**禁止**用 `imgs/` 等其他名称
+
+**示例**（✅ 正确 / ❌ 错误）：
+
+| 用户选题 | ✅ 正确目录名 | ❌ 错误目录名 |
+|---------|-------------|-------------|
+| 为什么口袋里的手机，总让你觉得它震了？ | `20260804_手机幻觉震动` | `phone-hallucination` |
+| Claude Code 推出 Agent View，一个人指挥十个 AI 写代码 | `20260804_AgentView指挥` | `claude-code-agent-view` |
+
+```bash
+# 获取当天日期
+DATE=$(date +%Y%m%d)
+# 创建目录（标题简称从选题提取中文关键词）
+mkdir -p "00-草稿/${DATE}_{标题简称}/images"
+```
+
+> 必须使用 `mkdir -p` 显式创建目录，不得跳过。后续所有步骤的文件输出路径均基于此目录。
+
+**执行后立即自检**：运行 `ls 00-草稿/` 确认刚创建的目录是 `YYYYMMDD_中文标题简称` 格式；若不符，立即重命名修正后再继续。
 
 同时读取：
 - `02-资源/选题库.md` — 检查是否已有此选题
@@ -84,10 +111,13 @@ description: "微信公众号自动图文编排器 — 从一句话选题到发�
 | 其他（纯文字描述/链接/素材） | 观点原创（通用） | `02-资源/写作风格.md` |
 
 **写稿流程**：
-1. 创建 `00-草稿/{topic-slug}/` 目录
+1. 确认 `00-草稿/{YYYYMMDD_标题简称}/` 目录已创建（Step 1 已执行 `mkdir -p`）
 2. 搜索素材库 (`02-资源/素材库.md`) 和信息源 (`02-资源/信息源.md`) 获取真实细节
 3. 读取对应风格文件，按风格要求产出初稿（先列大纲，得到确认后再展开）
-4. 初稿保存为 `00-草稿/{topic-slug}/article-raw.md`
+   - 大纲保存为 `00-草稿/{YYYYMMDD_标题简称}/outline.md`
+   - 大纲头部字段**必须**包含：选题、文章类型、风格文件、**输出目录：`00-草稿/{YYYYMMDD_标题简称}/`**
+   - ⛔ 大纲中**不要**写英文 `Slug` 字段；如需标识，直接写中文目录名或标题简称
+4. 初稿保存为 `00-草稿/{YYYYMMDD_标题简称}/article-raw.md`
 
 **用户干预点**：初稿产出后告知用户，用户可自行删改。删改满意后告知继续。
 
@@ -131,7 +161,7 @@ description: "微信公众号自动图文编排器 — 从一句话选题到发�
 1. 分析文章结构，识别需要配图的位置
 2. 确定每张图的 Type × Style × Palette 三维度
 3. 写入配图提示词到 `image-prompts.md`
-4. 提示词文件保存到 `00-草稿/{topic-slug}/image-prompts.md`
+4. 提示词文件保存到 `00-草稿/{YYYYMMDD_标题简称}/image-prompts.md`
 
 #### 5.3 批量生图规范
 调用 `baoyu-image-gen` 批量生图：
@@ -158,7 +188,7 @@ description: "微信公众号自动图文编排器 — 从一句话选题到发�
 
 ```bash
 bun run .agents/skills/baoyu-markdown-to-html/scripts/main.ts \
-  00-草稿/{topic-slug}/article.md \
+  00-草稿/{YYYYMMDD_标题简称}/article.md \
   --theme modern \
   --keep-title
 ```
@@ -179,12 +209,12 @@ bun run .agents/skills/baoyu-markdown-to-html/scripts/main.ts \
 ```bash
 # API 方式
 bun run .agents/skills/baoyu-post-to-wechat/scripts/wechat-api.ts \
-  00-草稿/{topic-slug}/article.md \
+  00-草稿/{YYYYMMDD_标题简称}/article.md \
   --theme modern
 
 # 浏览器方式（需先确认用户同意）
 bun run .agents/skills/baoyu-post-to-wechat/scripts/wechat-article.ts \
-  --markdown 00-草稿/{topic-slug}/article.md \
+  --markdown 00-草稿/{YYYYMMDD_标题简称}/article.md \
   --theme modern
 ```
 
@@ -192,8 +222,9 @@ bun run .agents/skills/baoyu-post-to-wechat/scripts/wechat-article.ts \
 
 发布成功后提示用户归档，归档内容：
 
-1. 将 `00-草稿/{topic-slug}/` 移入 `01-文章/YYYYMMDD_标题简称/`
-   - 目录命名：`YYYYMMDD_标题关键词`（日期 + 2-6 个字的标题简称）
+1. 将 `00-草稿/{YYYYMMDD_标题简称}/` 移入 `01-文章/YYYYMMDD_标题简称/`
+   - 草稿目录已按 `{YYYYMMDD_标题简称}` 命名，归档时目录名不变，直接移动即可
+   - 若标题简称与最终文章标题关键词有出入，按最终标题调整目录名
    - 归档结构：
      ```
      01-文章/YYYYMMDD_标题简称/
