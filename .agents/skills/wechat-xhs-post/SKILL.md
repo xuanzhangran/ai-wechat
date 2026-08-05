@@ -36,6 +36,7 @@ description: "微信公众号文章编排器，复用已有小红书图文素材
 | `--publish` | 跳过 Step 8 的交互式确认，直接发布到草稿箱 |
 | `--dry-run` | 只生成文章不发布 |
 | `--style <style>` | 公众号文章风格，可选值见下方"风格预设"；不传则交互式询问 |
+| `--theme <theme>` | 排版主题（default/grace/simple/modern）；不传则交互式询问 |
 | `--title <title>` | 手动指定标题（默认从 `summary.md` 提取，也用于确定输出目录的标题简称） |
 
 > 输出目录 `00-草稿/{YYYYMMDD_标题简称}/` 中的标题简称来自 `summary.md` 主选标题（或 `--title`），与 `<topic-slug>` 无关。
@@ -63,17 +64,17 @@ image-cards/<topic>/
 
 ## 风格预设
 
-扩写文章前，根据选定的风格决定写作指令和视觉主题。用户可通过 `--style` 指定；不传则在 Step 1 中交互式询问用户选择。
+扩写文章前，根据选定的风格决定写作指令。用户可通过 `--style` 指定；不传则在 Step 1 中交互式询问用户选择。排版主题（HTML 视觉风格）与写作风格**相互独立**，在参数解析阶段由用户自由选择（见 Step 1「排版主题选择」）。
 
 ### 5 种风格一览
 
-| 风格 | 适用场景 | 写作要点 | HTML 主题 | 颜色 |
-|------|---------|---------|----------|------|
-| `general` | 冷知识、科学解释、通用科普（**默认**） | 客观中立，数据支撑，结构清晰 | modern | orange |
-| `deep` | 需要深入探讨的议题、多维度分析 | 多层递进，引用研究，较长篇幅 | modern | blue |
-| `warm` | 宠物、情感、生活类、有温度的话题 | 生活化场景，情感共鸣，柔和结尾 | grace | rose |
-| `sharp` | 社会现象、观点输出、态度鲜明 | 开门见山，态度明确，节奏快 | simple | black |
-| `fun` | 趣味科普、日常话题、轻松向 | 口语化，类比多，段落短，幽默感 | modern | yellow |
+| 风格 | 适用场景 | 写作要点 |
+|------|---------|---------|
+| `general` | 冷知识、科学解释、通用科普（**默认**） | 客观中立，数据支撑，结构清晰 |
+| `deep` | 需要深入探讨的议题、多维度分析 | 多层递进，引用研究，较长篇幅 |
+| `warm` | 宠物、情感、生活类、有温度的话题 | 生活化场景，情感共鸣，柔和结尾 |
+| `sharp` | 社会现象、观点输出、态度鲜明 | 开门见山，态度明确，节奏快 |
+| `fun` | 趣味科普、日常话题、轻松向 | 口语化，类比多，段落短，幽默感 |
 
 ### 风格详细定义
 
@@ -180,7 +181,7 @@ image-cards/<topic-slug>/
 2. 如果未传 `--style`，**交互式询问用户**选择风格（使用 `question` 工具），展示 5 种风格及简要说明，让用户选择
 3. 合法值：`general` / `deep` / `warm` / `sharp` / `fun`
 4. 传入非法值 → **停止**，提示合法值列表
-5. 将选定的风格传递给 Step 3（扩写）和 Step 7（转 HTML），影响写作指令和视觉主题
+5. 将选定的风格传递给 Step 3（扩写），影响写作指令；排版主题与风格独立，在参数解析阶段另行选择（见下方「排版主题选择」）
 
 **交互式风格选择提示**（未传 `--style` 时弹出）：
 
@@ -195,6 +196,17 @@ image-cards/<topic-slug>/
 
 输入编号或名称选择：
 ```
+
+**排版主题选择**（参数解析阶段执行）：若用户未通过 `--theme` 指定，使用 `AskUserQuestion` 交互式询问（4 选 1），记作 `{theme}`：
+
+| 主题 | 说明 |
+|------|------|
+| `modern`（默认） | 现代大圆角、橙色主色、药丸形标题 |
+| `default` | 经典简约、蓝色主色 |
+| `grace` | 优雅知性、紫色主色 |
+| `simple` | 简洁干净、绿色主色 |
+
+> 主题与写作风格（general/deep/warm/sharp/fun）**相互独立**；`{theme}` 贯穿 Step 7 转 HTML 与 Step 8 发布，保证预览与发布一致。
 
 **预检：image-cards/ 目录检查**
 1. 检查 `image-cards/` 目录是否存在
@@ -451,23 +463,16 @@ sed -i '' 's/\.webp$/.png/' 00-草稿/{YYYYMMDD_标题简称}/article.md
 
 ### Step 7: 转 HTML
 
-调用 `baoyu-markdown-to-html` 技能。**根据选定的风格**传入对应的 `--theme` 和 `--color`：
-
-| 风格 | `--theme` | `--color` |
-|------|----------|----------|
-| `general` | modern | orange |
-| `deep` | modern | blue |
-| `warm` | grace | rose |
-| `sharp` | simple | black |
-| `fun` | modern | yellow |
+调用 `baoyu-markdown-to-html` 技能：
 
 ```bash
 bun run .agents/skills/baoyu-markdown-to-html/scripts/main.ts \
   00-草稿/{YYYYMMDD_标题简称}/article.md \
-  --theme <风格对应theme> --color <风格对应color> \
+  --theme {theme} \
   --keep-title
 ```
 
+- `{theme}` 已在 Step 1 选择（default / grace / simple / modern，默认 `modern`），与写作风格独立
 - `--keep-title` 保留文中标题
 - 输出：`00-草稿/{YYYYMMDD_标题简称}/article.html`
 
@@ -503,12 +508,12 @@ bun run .agents/skills/baoyu-markdown-to-html/scripts/main.ts \
 # API 方式（需配置 WECHAT_APP_ID + WECHAT_APP_SECRET）
 bun run .agents/skills/baoyu-post-to-wechat/scripts/wechat-api.ts \
   00-草稿/{YYYYMMDD_标题简称}/article.html \
-  --theme <风格对应theme>
+  --theme {theme}
 
 # 浏览器方式（手动操作）
 bun run .agents/skills/baoyu-post-to-wechat/scripts/wechat-article.ts \
   --markdown 00-草稿/{YYYYMMDD_标题简称}/article.md \
-  --theme <风格对应theme>
+  --theme {theme}
 ```
 
 **元数据配置**：

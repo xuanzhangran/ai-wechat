@@ -46,6 +46,7 @@ metadata:
 |---------|------|
 | 基础调用 | `/wechat-copywriter https://xxx.blog` |
 | 指定风格 | `/wechat-copywriter https://xxx.blog --style 生动科普` |
+| 指定主题 | `/wechat-copywriter https://xxx.blog --theme grace` |
 | 指定目录 | `/wechat-copywriter https://xxx.blog --output ./my-draft/` |
 | 直接发布 | `/wechat-copywriter https://xxx.blog --publish` |
 | 仅生成 | `/wechat-copywriter https://xxx.blog --dry-run` |
@@ -55,6 +56,7 @@ metadata:
 |------|------|--------|
 | `<url>` | 博客链接（必填） | - |
 | `--style <风格>` | 指定文风 | `生动科普` |
+| `--theme <主题>` | 指定排版主题（default/grace/simple/modern），跳过交互式询问 | `modern`（未指定则交互式询问） |
 | `--output <目录>` | 输出目录 | `00-草稿/{YYYYMMDD_标题简称}/` |
 | `--no-images` | 不抓取博客图片（跳过询问，后续由 AI 生成配图） | `false` |
 | `--no-humanize` | 跳过去 AI 味 | `false` |
@@ -70,6 +72,7 @@ metadata:
 | 输入来源 | 提取方式 |
 |---------|---------|
 | `--style <风格>` | 取 `--style` 后面的风格名称 |
+| `--theme <主题>` | 取 `--theme` 后面的主题名（default/grace/simple/modern） |
 | `--output <目录>` | 取 `--output` 后面的目录路径 |
 | `--publish` | 标记为直接发布模式 |
 | `--dry-run` | 标记为仅生成模式 |
@@ -124,7 +127,46 @@ else:
     style = extract_style_from_input(user_input)
 ```
 
-### 0.3 询问是否抓取博客图片
+### 0.3 选择排版主题（交互式）
+
+**当用户未通过 `--theme` 参数指定主题时**，在参数解析阶段（风格选择之后）**必须**交互式询问用户选择排版主题：
+
+使用 `AskUserQuestion` 工具询问用户：
+
+```
+请选择文章排版主题：
+```
+
+| 主题 | 说明 | 视觉特点 |
+|------|------|---------|
+| `modern`（默认） | 现代大圆角 | 橙色主色、药丸形标题、宽松行距 |
+| `default` | 经典简约 | 蓝色主色、通用稳重 |
+| `grace` | 优雅知性 | 紫色主色、柔和高级 |
+| `simple` | 简洁干净 | 绿色主色、清爽易读 |
+
+**默认选择**：`modern`（沿用原默认值）
+
+**实现逻辑**：
+```python
+if "--theme" not in user_input:
+    theme = ask_user_question(
+        header="排版主题",
+        question="请选择文章排版主题：",
+        options=[
+            {"label": "modern（默认）", "description": "现代大圆角、药丸形标题、橙色主色"},
+            {"label": "default", "description": "经典简约、蓝色主色"},
+            {"label": "grace", "description": "优雅知性、紫色主色"},
+            {"label": "simple", "description": "简洁干净、绿色主色"}
+        ],
+        default="modern（默认）"
+    )
+else:
+    theme = extract_theme_from_input(user_input)
+```
+
+**`{theme}` 变量贯穿后续步骤**：Step 6.1 转 HTML 与 Step 7.2 发布（API/浏览器方式）均使用此主题，保证预览与发布一致。
+
+### 0.4 询问是否抓取博客图片
 
 **当用户未指定 `--no-images` 参数时**，在风格选择之后、生成目录名之前，**必须**交互式询问用户是否需要抓取博客图片。
 
@@ -159,7 +201,7 @@ else:
 - `抓原图`：Step 1 下载图片并处理 SVG；Step 5.3 引用原图，5.4 仅在原图不足时补充
 - `AI配图`：Step 1 仅抓文本；Step 5 跳过引用原图，5.4 必选 AI 生成配图（参考 wechat-auto-creator Step 5 流程）
 
-### 0.4 生成输出目录名称
+### 0.5 生成输出目录名称
 
 **命名规则**：`{YYYYMMDD_标题简称}`
 - `YYYYMMDD`：当天日期，如 `20260802`
@@ -178,7 +220,7 @@ else:
 | React 18 新特性详解 | `20260802_React18新特性` |
 | 如何用 Python 爬取网页数据 | `20260802_Python爬取网页` |
 
-### 0.5 创建输出目录
+### 0.6 创建输出目录
 
 **Step 1 开始时必须立即执行**（在任何文件写入之前）：
 
@@ -192,7 +234,7 @@ mkdir -p "00-草稿/${DATE}_{标题简称}/original"
 
 > **必须使用 `mkdir -p` 显式创建目录**，不得跳过此步骤。后续所有步骤的文件输出路径均基于此目录。
 
-### 0.6 参数解析完成
+### 0.7 参数解析完成
 
 解析完成后，输出确认信息：
 
@@ -201,6 +243,7 @@ mkdir -p "00-草稿/${DATE}_{标题简称}/original"
 
 URL: https://xxx.blog
 风格: 生动科普
+排版主题: modern（默认）/ default / grace / simple
 图片模式: 抓原图 / AI配图
 输出目录: 00-草稿/20260802_DeepSeek安装配置/
 发布模式: 询问确认
@@ -210,9 +253,9 @@ URL: https://xxx.blog
 
 ## Step 1: 抓取博客
 
-> **前置条件**：Step 0.5 的 `mkdir -p` 已执行，目录已创建。
+> **前置条件**：Step 0.6 的 `mkdir -p` 已执行，目录已创建。
 >
-> **图片模式**：根据 Step 0.3 的询问结果执行对应分支（`抓原图` / `AI配图`）。
+> **图片模式**：根据 Step 0.4 的询问结果执行对应分支（`抓原图` / `AI配图`）。
 
 ### 1.1 主方案：baoyu-url-to-markdown
 
@@ -557,7 +600,7 @@ bun run .agents/skills/baoyu-compress-image/scripts/main.ts \
 ```bash
 bun run .agents/skills/baoyu-markdown-to-html/scripts/main.ts \
   ${DIR}/article.md \
-  --theme modern \
+  --theme {theme} \
   --keep-title
 ```
 
@@ -621,7 +664,7 @@ bun run .agents/skills/baoyu-markdown-to-html/scripts/main.ts \
 # API 方式（首选 — 无需打开浏览器，静默发布）
 bun run .agents/skills/baoyu-post-to-wechat/scripts/wechat-api.ts \
   ${DIR}/article.html \
-  --theme modern
+  --theme {theme}
 ```
 
 **浏览器备用**：API 不可用时（缺少凭证或 API 调用失败），告知用户，经同意后走浏览器方式：
@@ -630,7 +673,7 @@ bun run .agents/skills/baoyu-post-to-wechat/scripts/wechat-api.ts \
 # 浏览器方式（需手动操作，自动打开公众号后台）
 bun run .agents/skills/baoyu-post-to-wechat/scripts/wechat-article.ts \
   --markdown ${DIR}/article.md \
-  --theme modern
+  --theme {theme}
 ```
 
 **自动发布模式**（`--publish`）：直接调用 API 发布，不打断确认。API 不可用时报错停止，不回退浏览器方式（避免意外打开浏览器）。
@@ -716,7 +759,7 @@ media_id: {media_id}
 - 每个步骤的输出是下一个步骤的输入
 - 用户可在步骤之间介入（如修改重写内容、调整风格）
 - **封面图**：每篇文章必须生成封面图（baoyu-cover-image），保存到 `images/cover.png`
-- **图片模式**：Step 0.3 交互式询问用户是否抓取博客图片；`--no-images` 参数可跳过询问直接走 AI 配图模式
+- **图片模式**：Step 0.4 交互式询问用户是否抓取博客图片；`--no-images` 参数可跳过询问直接走 AI 配图模式
   - `抓原图`：Step 1 下载图片 + 内嵌 SVG 转 PNG，Step 5 优先复用原图
   - `AI配图`：Step 1 仅抓文本，Step 5 全部由 AI 生成配图（参考 wechat-auto-creator Step 5 流程）
 - **内嵌 SVG**：网页中内嵌的架构图/流程图（`<svg>` 元素）会自动提取并转为 PNG（仅抓原图模式），处理过程包括 CSS 变量替换、白色背景添加、中文字体渲染

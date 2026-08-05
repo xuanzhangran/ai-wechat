@@ -40,6 +40,7 @@ description: "微信公众号自动图文编排器 — 从一句话选题到发�
 | `--prompt` | `/wechat-auto-creator --prompt "写一篇关于现代人手机幻觉震动的文章"` |
 | `--publish` | `/wechat-auto-creator "选题" --publish` 跳过确认直接发布到草稿箱 |
 | `--dry-run` | `/wechat-auto-creator "选题" --dry-run` 只生成不发布 |
+| `--theme` | `/wechat-auto-creator "选题" --theme grace` 指定排版主题（default/grace/simple/modern），跳过询问 |
 
 ## 依赖的子技能（按调用顺序）
 - 写稿：风格文件（`02-资源/写作风格.md` / `02-资源/播客现场重播员-写作风格.md` / `02-资源/勇鹏的写作风格.md`）
@@ -66,6 +67,7 @@ description: "微信公众号自动图文编排器 — 从一句话选题到发�
 | `{标题简称}` | 从选题/主题提取 2-6 个字的中文关键词（中文为主，可含英文品牌名，如 `手机幻觉`、`DeepSeek安装配置`） |
 | `--publish` | 标记为自动发布（跳过发布确认，直接调用 API） |
 | `--dry-run` | 标记为仅生成不发布 |
+| `--theme <主题>` | 排版主题（default/grace/simple/modern）；未指定则在 Step 1 交互式询问 |
 | 链接/URL/字幕文件 | 自动判定为访谈重播型 |
 | 纯文字描述 | 自动判定为观点原创型 |
 
@@ -99,6 +101,17 @@ mkdir -p "00-草稿/${DATE}_{标题简称}/images"
 - `02-资源/选题库.md` — 检查是否已有此选题
 - `02-资源/素材库.md` — 写稿时搜索真实素材
 - `02-资源/信息源.md` — 信息源参考
+
+**排版主题选择**（参数解析阶段执行）：若用户未通过 `--theme` 指定，使用 `AskUserQuestion` 交互式询问（4 选 1），记作 `{theme}`：
+
+| 主题 | 说明 |
+|------|------|
+| `modern`（默认） | 现代大圆角、橙色主色、药丸形标题 |
+| `default` | 经典简约、蓝色主色 |
+| `grace` | 优雅知性、紫色主色 |
+| `simple` | 简洁干净、绿色主色 |
+
+> `{theme}` 贯穿 Step 6 转 HTML 与 Step 7 发布，保证预览与发布一致。
 
 ### Step 2: 写稿
 
@@ -189,12 +202,11 @@ mkdir -p "00-草稿/${DATE}_{标题简称}/images"
 ```bash
 bun run .agents/skills/baoyu-markdown-to-html/scripts/main.ts \
   00-草稿/{YYYYMMDD_标题简称}/article.md \
-  --theme modern \
+  --theme {theme} \
   --keep-title
 ```
 
-- 主题可选：default / grace / simple / modern
-- 默认使用 `modern` 主题
+- `{theme}` 已在 Step 1 选择（default / grace / simple / modern，默认 `modern`）
 - 输出为 `article.html`（与原文件同目录）
 
 ### Step 7: 发布到公众号草稿箱
@@ -210,12 +222,12 @@ bun run .agents/skills/baoyu-markdown-to-html/scripts/main.ts \
 # API 方式
 bun run .agents/skills/baoyu-post-to-wechat/scripts/wechat-api.ts \
   00-草稿/{YYYYMMDD_标题简称}/article.md \
-  --theme modern
+  --theme {theme}
 
 # 浏览器方式（需先确认用户同意）
 bun run .agents/skills/baoyu-post-to-wechat/scripts/wechat-article.ts \
   --markdown 00-草稿/{YYYYMMDD_标题简称}/article.md \
-  --theme modern
+  --theme {theme}
 ```
 
 ### Step 8: 归档（可选 — 发布成功后提示）
