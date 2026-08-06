@@ -279,55 +279,98 @@ $BAOYU_FETCH <url> --output "${DIR}/original/article.md" --download-media
 - `抓原图` 模式额外输出：`${DIR}/original/images/` — 下载的图片目录
 - `AI配图` 模式：不下载图片，跳过 1.2/1.3 的图片处理
 
-### 1.2 降级方案：webfetch + curl 下载图片
+### 1.2 降级方案：webfetch + 图片下载 + SVG 提取
 
-**仅 `抓原图` 模式执行**。当 `baoyu-url-to-markdown` 失败（reCAPTCHA、JS 渲染等）时，使用降级方案：
+**仅 `抓原图` 模式执行**。当 `baoyu-url-to-markdown` 失败（reCAPTCHA、JS 渲染等）时，使用降级方案。
 
-**步骤 A：用 webfetch 抓取 HTML**
+**⚠️ 重要**：降级方案必须完成以下 4 个步骤，确保所有图片（包括内嵌 SVG）都被下载。
+
+---
+
+**步骤 A：用 webfetch 获取 HTML 内容**
 
 ```bash
-# webfetch 只提取文本，不下载图片
-# 需要从 HTML 中提取图片 URL 后单独下载
+# 使用 webfetch 获取网页内容（format: html 保留完整 HTML 结构）
+# 输出保存到临时文件供后续处理
 ```
 
-**步骤 B：从 HTML 提取图片 URL**
+**关键**：必须使用 `format: html` 而非 `format: markdown`，因为：
+- `markdown` 格式会丢失图片 URL
+- `html` 格式保留完整的 `<img>` 标签和内嵌 `<svg>` 元素
 
-使用正则或 Grep 从 HTML 中提取所有图片 URL：
+---
+
+**步骤 B：从 HTML 提取图片 URL 并下载**
+
+**B1：提取 `<img>` 标签中的图片 URL**
+
+使用 Grep 从 HTML 中提取所有图片 URL：
 
 ```bash
-# 提取所有 <img> 标签中的 src 属性
+# 正则匹配 <img> 标签的 src 属性
 # 支持的格式：.jpg, .jpeg, .png, .gif, .webp, .svg
-# 排除：base64 内联图片、广告追踪像素
+# 排除：base64 内联图片（data:image）、广告追踪像素（1x1 像素）
 ```
 
-**步骤 B2：提取内嵌 SVG 并转 PNG**
+**提取规则**：
+- 匹配 `<img ... src="URL" ...>` 格式
+- 支持相对路径（自动转为绝对路径）
+- 过滤掉 `data:image` 开头的 base64 图片
+- 过滤掉宽度或高度 ≤ 1 像素的追踪像素
 
-许多技术博客的架构图、流程图是以内嵌 `<svg>` 元素嵌入 HTML 的（非 `<img>` 引用），需要单独处理：
+**B2：下载图片到 images/ 目录**
+
+```bash
+# Windows PowerShell 示例
+Invoke-WebRequest -Uri "<图片URL>" -OutFile "${DIR}/images/<文件名>.png"
+
+# 文件命名规则：
+# - 优先使用 URL 最后一段作为文件名
+# - 如 URL 无明确文件名，使用 img-1.png, img-2.png... 递增命名
+```
+
+**B3：处理 webp 格式（公众号不支持）**
+
+```bash
+# 如果下载的图片是 .webp 格式，必须转换为 .png
+# 使用 Python PIL 转换
+.venv/Scripts/python -c "
+from PIL import Image
+img = Image.open('${DIR}/images/<文件名>.webp')
+img.save('${DIR}/images/<文件名>.png', 'PNG')
+"
+```
+
+---
+
+**步骤 C：提取内嵌 SVG 并转 PNG**
+
+许多技术博客的架构图、流程图是以内嵌 `<svg>` 元素嵌入 HTML 的（而非 `<img src="xxx.svg">` 引用），需要单独处理：
 
 ```bash
 # 使用 extract-svg.ts 提取内嵌 SVG → 替换 CSS 变量 → 转 PNG
 bun run .agents/skills/wechat-copywriter/scripts/extract-svg.ts \
-  <raw_html_file> \
+  <html_content_file> \
   ${DIR}/images \
   --prefix arch
 ```
 
 **处理流程**：
-1. 从 HTML 中提取所有 `<svg>...</svg>` 块（正则匹配）
+1. 用 cheerio 以 DOM 方式提取所有 `<svg>` 元素（容错处理不规范 HTML，正确处理嵌套 SVG）
 2. 从页面 `<style>` 和内联样式中提取 CSS 变量定义（`--c-xxx: #ccc`）
 3. 将 `var(--c-xxx)` 替换为实际颜色值
-4. 添加白色背景 + 中文字体声明，确保渲染正确
+4. 在 DOM 层面添加白色背景 + 中文字体声明 + 显式 width/height，确保渲染正确
 5. 用 `sharp` 将每个 SVG 转为 PNG（白底，无损）
 6. 保存到 `${DIR}/images/` 目录，命名为 `arch-1.png`, `arch-2.png`...
 
 **输出 JSON 格式**（stdout）：
 ```json
 {
-  "totalSVGs": 7,
-  "converted": 7,
+  "totalSVGs": 6,
+  "converted": 6,
   "skipped": 0,
   "files": [
-    {"name": "arch-1.png", "width": 680, "height": 120, "sizeKB": 8.2}
+    {"name": "arch-1.png", "width": 800, "height": 350, "sizeKB": 28.4}
   ],
   "errors": []
 }
@@ -337,20 +380,50 @@ bun run .agents/skills/wechat-copywriter/scripts/extract-svg.ts \
 - SVG 内文本内容少于 2 字符的（纯装饰性元素）自动跳过
 - 已有 `<img src="*.svg">` 引用的不重复处理
 
-**步骤 C：下载图片到 images/ 目录**
+**失败处理**：渲染失败的 SVG 会将清洗后的 SVG 保存为 `arch-<n>.svg`（调试用），错误信息计入 stdout JSON 的 `errors` 字段，不影响其他 SVG 转换。
 
-```bash
-# 使用 curl 或 Invoke-WebRequest 下载每个图片
-# 保存到 ${DIR}/images/ 目录
-# 文件名使用 URL 最后一段或自动生成
-```
+---
 
 **步骤 D：更新 article.md 图片引用**
 
-将下载的图片路径替换到 article.md 中：
+将下载的图片路径替换到 article.md 中，确保图片能正确显示：
 
 ```markdown
+# 在对应位置添加图片引用
 ![图片描述](images/filename.png)
+
+# 对于内嵌 SVG 转换的图片，添加描述性 alt 文本
+![LangGraph 核心架构](images/arch-1.png)
+```
+
+**图片插入位置建议**：
+- `<img>` 图片：保持原文位置
+- 内嵌 SVG：插入到对应章节的标题之后或段落之间
+
+---
+
+**完整执行流程示例**：
+
+```python
+# 伪代码示例
+def fallback_fetch(url, dir):
+    # 步骤 A: 获取 HTML
+    html_content = webfetch(url, format="html")
+    save_to_file(html_content, f"{dir}/original/raw.html")
+    
+    # 步骤 B: 提取并下载 <img> 图片
+    img_urls = extract_img_urls(html_content)
+    for i, img_url in enumerate(img_urls):
+        filename = get_filename_from_url(img_url) or f"img-{i+1}.png"
+        download(img_url, f"{dir}/images/{filename}")
+        if filename.endswith(".webp"):
+            convert_webp_to_png(f"{dir}/images/{filename}")
+    
+    # 步骤 C: 提取内嵌 SVG
+    svg_result = run_extract_svg(f"{dir}/original/raw.html", f"{dir}/images", prefix="arch")
+    
+    # 步骤 D: 更新 article.md 图片引用
+    update_markdown_images(f"{dir}/article.md", img_urls, svg_result.files)
 ```
 
 ### 1.3 图片来源优先级
@@ -359,9 +432,14 @@ bun run .agents/skills/wechat-copywriter/scripts/extract-svg.ts \
 
 | 优先级 | 来源 | 说明 |
 |--------|------|------|
-| 1 | baoyu-url-to-markdown | 首选，自动下载内容+图片 |
-| 2 | webfetch + curl | 降级方案，手动提取并下载图片 |
+| 1 | baoyu-url-to-markdown | 首选，自动下载内容+图片+SVG |
+| 2 | webfetch + 图片下载 + SVG 提取 | 降级方案，完整执行步骤 A-D |
 | 3 | 无图片 | 仅保留文字内容 |
+
+**降级方案必须包含的组件**：
+- `<img>` 标签图片下载
+- 内嵌 `<svg>` 提取并转 PNG
+- webp 格式转换为 png（公众号不支持 webp）
 
 ### 1.4 质量检查
 
@@ -739,7 +817,8 @@ media_id: {media_id}
 ```
 0. [参数解析] 提取URL、交互式选择风格、询问是否抓图 → 确定输入参数 + 图片模式
 1. baoyu-url-to-markdown     → 抓取内容（抓原图模式含下载图片）
-2. [extract-svg.ts]          → 内嵌 SVG 转 PNG（仅抓原图模式）
+   └─ [降级] webfetch        → 获取 HTML + 下载图片 + extract-svg.ts 提取内嵌 SVG
+2. [extract-svg.ts]          → 内嵌 SVG 转 PNG（仅抓原图模式，降级方案已包含）
 3. [手动] 提取关键概念       → 分析内容
 4. [WebSearch] 补充资料      → 搜索官网
 5. [手动] 融合重写           → 创作文章
@@ -763,6 +842,12 @@ media_id: {media_id}
   - `抓原图`：Step 1 下载图片 + 内嵌 SVG 转 PNG，Step 5 优先复用原图
   - `AI配图`：Step 1 仅抓文本，Step 5 全部由 AI 生成配图（参考 wechat-auto-creator Step 5 流程）
 - **内嵌 SVG**：网页中内嵌的架构图/流程图（`<svg>` 元素）会自动提取并转为 PNG（仅抓原图模式），处理过程包括 CSS 变量替换、白色背景添加、中文字体渲染
+- **降级方案（webfetch）**：当 baoyu-url-to-markdown 失败时，必须执行完整步骤 A-D：
+  - 步骤 A：获取 HTML（必须用 `format: html`）
+  - 步骤 B：提取 `<img>` 标签 URL 并下载，webp 转 png
+  - 步骤 C：使用 extract-svg.ts 提取内嵌 SVG 并转 PNG
+  - 步骤 D：更新 article.md 中的图片引用
+- **webp 格式问题**：公众号不支持 webp 格式图片，下载的 webp 必须转换为 png
 - **文内配图**：抓原图模式默认复用博客原图，原图不足时补充生成；AI 配图模式全部由 baoyu-image-gen 生成（至少 2 张文内图）
 - 风格规范在 `references/styles/` 目录下，可按需扩展
 - **风格选择**：未指定 `--style` 时必须交互式询问，默认选择「生动科普」
