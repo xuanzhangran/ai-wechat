@@ -8,7 +8,7 @@ description: |
   当用户提到"仿写"、"参考这篇博客"、"改写成公众号"、"copywrite + URL"、"抓取链接写文章"时使用。
 metadata:
   author: sisyphus
-  version: "1.0.0"
+  version: "1.1.0"
   dependencies:
     - baoyu-url-to-markdown
     - baoyu-markdown-to-html
@@ -30,7 +30,7 @@ metadata:
   │
   ├─ Step 0: 参数解析 → 提取 URL、交互式选择风格、询问是否抓图、确定输出目录
   ├─ Step 1: 抓取博客 → baoyu-url-to-markdown
-  │           ├─ 抓原图模式: 内容 + 图片下载 + 内嵌 SVG 转 PNG（降级: webfetch + curl）
+  │           ├─ 抓原图模式: 内容 + 图片下载 + 完整HTML保存 + 内嵌 SVG 转 PNG（降级: webfetch + curl）
   │           └─ AI配图模式: 仅抓文本内容（不下载图片）
   ├─ Step 2: 识别关键概念 → 提取核心术语、产品名、技术点
   ├─ Step 3: 补充资料 → 搜索官网、交叉校验、补充权威信息
@@ -56,9 +56,9 @@ metadata:
 |------|------|--------|
 | `<url>` | 博客链接（必填） | - |
 | `--style <风格>` | 指定文风 | `生动科普` |
-| `--theme <主题>` | 指定排版主题（default/grace/simple/modern），跳过交互式询问 | `modern`（未指定则交互式询问） |
+| `--theme <主题>` | 指定排版主题（default/grace/simple/modern） | `modern` |
 | `--output <目录>` | 输出目录 | `00-草稿/{YYYYMMDD_标题简称}/` |
-| `--no-images` | 不抓取博客图片（跳过询问，后续由 AI 生成配图） | `false` |
+| `--no-images` | 不抓取博客图片（后续由 AI 生成配图） | `false` |
 | `--no-humanize` | 跳过去 AI 味 | `false` |
 | `--publish` | 跳过确认直接发布到草稿箱 | `false` |
 | `--dry-run` | 仅生成不发布 | `false` |
@@ -72,7 +72,7 @@ metadata:
 | 输入来源 | 提取方式 |
 |---------|---------|
 | `--style <风格>` | 取 `--style` 后面的风格名称 |
-| `--theme <主题>` | 取 `--theme` 后面的主题名（default/grace/simple/modern） |
+| `--theme <主题>` | 取 `--theme` 后面的主题名 |
 | `--output <目录>` | 取 `--output` 后面的目录路径 |
 | `--publish` | 标记为直接发布模式 |
 | `--dry-run` | 标记为仅生成模式 |
@@ -80,15 +80,7 @@ metadata:
 
 ### 0.2 交互式风格选择
 
-**当用户未指定 `--style` 参数时**，必须交互式询问用户选择风格：
-
-使用 `AskUserQuestion` 工具询问用户：
-
-```
-请选择文章风格：
-```
-
-选项列表（按推荐顺序）：
+**当用户未指定 `--style` 参数时**，使用 `AskUserQuestion` 询问用户选择风格：
 
 | 序号 | 风格 | 说明 |
 |------|------|------|
@@ -102,40 +94,9 @@ metadata:
 | 8 | 口语唠嗑 | 随意亲切，闲聊→吐槽→分享，适合日常分享 |
 | 9 | 玩梗沙雕 | 搞笑玩梗，梗→知识→梗，适合年轻受众 |
 
-**默认选择**：第 1 项「生动科普」
+### 0.3 交互式排版主题
 
-**实现逻辑**：
-```python
-if "--style" not in user_input:
-    style = ask_user_question(
-        header="文章风格",
-        question="请选择文章风格：",
-        options=[
-            {"label": "生动科普（推荐）", "description": "活泼形象，故事化开头，适合技术概念解释"},
-            {"label": "技术干货", "description": "专业精炼，问题→方案→步骤，适合教程"},
-            {"label": "深度分析", "description": "理性客观，现象→原因→趋势，适合行业分析"},
-            {"label": "纪实叙事", "description": "温暖真实，时间线推进，适合人物故事"},
-            {"label": "治愈温柔", "description": "柔和共情，场景→感受→治愈，适合情感类"},
-            {"label": "观点鲜明", "description": "锐利直接，观点→论据→呼吁，适合评论"},
-            {"label": "轻松有趣", "description": "幽默轻松，段子→知识点，适合娱乐科普"},
-            {"label": "口语唠嗑", "description": "随意亲切，闲聊→吐槽→分享，适合日常分享"},
-            {"label": "玩梗沙雕", "description": "搞笑玩梗，梗→知识→梗，适合年轻受众"}
-        ],
-        default="生动科普（推荐）"
-    )
-else:
-    style = extract_style_from_input(user_input)
-```
-
-### 0.3 选择排版主题（交互式）
-
-**当用户未通过 `--theme` 参数指定主题时**，在参数解析阶段（风格选择之后）**必须**交互式询问用户选择排版主题：
-
-使用 `AskUserQuestion` 工具询问用户：
-
-```
-请选择文章排版主题：
-```
+**当用户未通过 `--theme` 参数指定主题时**，使用 `AskUserQuestion` 询问：
 
 | 主题 | 说明 | 视觉特点 |
 |------|------|---------|
@@ -144,62 +105,16 @@ else:
 | `grace` | 优雅知性 | 紫色主色、柔和高级 |
 | `simple` | 简洁干净 | 绿色主色、清爽易读 |
 
-**默认选择**：`modern`（沿用原默认值）
+**`{theme}` 变量贯穿后续步骤**：Step 6.1 转 HTML 与 Step 7.2 发布均使用此主题。
 
-**实现逻辑**：
-```python
-if "--theme" not in user_input:
-    theme = ask_user_question(
-        header="排版主题",
-        question="请选择文章排版主题：",
-        options=[
-            {"label": "modern（默认）", "description": "现代大圆角、药丸形标题、橙色主色"},
-            {"label": "default", "description": "经典简约、蓝色主色"},
-            {"label": "grace", "description": "优雅知性、紫色主色"},
-            {"label": "simple", "description": "简洁干净、绿色主色"}
-        ],
-        default="modern（默认）"
-    )
-else:
-    theme = extract_theme_from_input(user_input)
-```
+### 0.4 交互式图片模式
 
-**`{theme}` 变量贯穿后续步骤**：Step 6.1 转 HTML 与 Step 7.2 发布（API/浏览器方式）均使用此主题，保证预览与发布一致。
-
-### 0.4 询问是否抓取博客图片
-
-**当用户未指定 `--no-images` 参数时**，在风格选择之后、生成目录名之前，**必须**交互式询问用户是否需要抓取博客图片。
-
-使用 `AskUserQuestion` 工具询问用户：
-
-```
-请选择图片获取方式：
-```
+**当用户未指定 `--no-images` 参数时**，使用 `AskUserQuestion` 询问：
 
 | 选项 | 后续影响 |
 |------|---------|
 | 需要抓取图片（推荐） | Step 1 下载博客图片 + SVG 转 PNG；Step 5 优先引用原图 |
 | 不需要，AI 配图 | Step 1 仅抓取文本；Step 5 全部由 AI 生成配图 |
-
-**实现逻辑**：
-```python
-if "--no-images" in user_input:
-    image_mode = "AI配图"   # 指定 --no-images 则跳过询问
-else:
-    image_mode = ask_user_question(
-        header="抓取图片",
-        question="是否需要抓取博客中的图片？",
-        options=[
-            {"label": "需要（推荐）", "description": "抓取博客原图并复用，保留原文视觉内容"},
-            {"label": "不需要，AI 配图", "description": "不抓取博客图片，后续由 AI 生成配图"}
-        ],
-        default="需要（推荐）"
-    )
-```
-
-**`{图片模式}` 贯穿后续步骤**：
-- `抓原图`：Step 1 下载图片并处理 SVG；Step 5.3 引用原图，5.4 仅在原图不足时补充
-- `AI配图`：Step 1 仅抓文本；Step 5 跳过引用原图，5.4 必选 AI 生成配图（参考 wechat-auto-creator Step 5 流程）
 
 ### 0.5 生成输出目录名称
 
@@ -207,32 +122,22 @@ else:
 - `YYYYMMDD`：当天日期，如 `20260802`
 - `标题简称`：从博客标题提取 2-6 个字的中文关键词（纯中文，不含英文品牌名）
 
-**生成逻辑**：
-1. 抓取博客后，获取页面标题
-2. 从标题中提取核心中文关键词（2-6 个字）
-3. 组合为目录名：`20260802_DeepSeek安装配置`
-
 **示例**：
 | 博客标题 | 生成的目录名 |
 |---------|-------------|
 | RAG: Retrieval-Augmented Generation | `20260803_RAG知识检索` |
 | Codex Deepseek 配置 — 通过 CC Switch 中转 | `20260802_DeepSeek安装配置` |
 | React 18 新特性详解 | `20260802_React18新特性` |
-| 如何用 Python 爬取网页数据 | `20260802_Python爬取网页` |
 
 ### 0.6 创建输出目录
 
-**Step 1 开始时必须立即执行**（在任何文件写入之前）：
+**Step 1 开始时必须立即执行**：
 
 ```bash
-# 获取当天日期
 DATE=$(date +%Y%m%d)
-# 创建目录（标题简称从博客标题提取）
 mkdir -p "00-草稿/${DATE}_{标题简称}/images"
 mkdir -p "00-草稿/${DATE}_{标题简称}/original"
 ```
-
-> **必须使用 `mkdir -p` 显式创建目录**，不得跳过此步骤。后续所有步骤的文件输出路径均基于此目录。
 
 ### 0.7 参数解析完成
 
@@ -243,8 +148,8 @@ mkdir -p "00-草稿/${DATE}_{标题简称}/original"
 
 URL: https://xxx.blog
 风格: 生动科普
-排版主题: modern（默认）/ default / grace / simple
-图片模式: 抓原图 / AI配图
+排版主题: modern
+图片模式: 抓原图
 输出目录: 00-草稿/20260802_DeepSeek安装配置/
 发布模式: 询问确认
 
@@ -254,17 +159,13 @@ URL: https://xxx.blog
 ## Step 1: 抓取博客
 
 > **前置条件**：Step 0.6 的 `mkdir -p` 已执行，目录已创建。
->
-> **图片模式**：根据 Step 0.4 的询问结果执行对应分支（`抓原图` / `AI配图`）。
 
 ### 1.1 主方案：baoyu-url-to-markdown
 
-使用 `baoyu-url-to-markdown` 抓取博客内容，**根据图片模式决定是否下载图片**：
+使用 `baoyu-url-to-markdown` 抓取博客内容：
 
 ```bash
-# 目录变量（后续步骤复用）
 DIR="00-草稿/${DATE}_{标题简称}"
-
 BAOYU_FETCH=".agents/skills/baoyu-url-to-markdown/scripts/baoyu-fetch"
 
 # 抓原图模式：抓取内容 + 下载图片
@@ -274,66 +175,38 @@ $BAOYU_FETCH <url> --output "${DIR}/original/article.md" --download-media
 # $BAOYU_FETCH <url> --output "${DIR}/original/article.md"
 ```
 
-**输出**：
-- `${DIR}/original/article.md` — 博客 Markdown 内容
-- `抓原图` 模式额外输出：`${DIR}/original/images/` — 下载的图片目录
-- `AI配图` 模式：不下载图片，跳过 1.2/1.3 的图片处理
-
 ### 1.2 降级方案：webfetch + 图片下载 + SVG 提取
 
 **仅 `抓原图` 模式执行**。当 `baoyu-url-to-markdown` 失败（reCAPTCHA、JS 渲染等）时，使用降级方案。
 
-**⚠️ 重要**：降级方案必须完成以下 4 个步骤，确保所有图片（包括内嵌 SVG）都被下载。
-
----
+**⚠️ 重要**：降级方案必须完成以下 5 个步骤：
 
 **步骤 A：用 webfetch 获取 HTML 内容**
 
+必须使用 `format: html` 而非 `format: markdown`，因为 markdown 格式会丢失图片 URL。
+
+**步骤 B：保存完整 HTML 到文件（关键步骤）**
+
+`extract-svg.ts` 脚本需要从**文件**读取 HTML，不能直接使用 webfetch 返回的字符串。必须将完整 HTML 保存到 `${DIR}/original/full.html`。
+
 ```bash
-# 使用 webfetch 获取网页内容（format: html 保留完整 HTML 结构）
-# 输出保存到临时文件供后续处理
+# Windows (PowerShell) - 使用 Invoke-WebRequest 下载完整页面
+Invoke-WebRequest -Uri "<url>" -OutFile "${DIR}/original/full.html"
+
+# macOS/Linux - 使用 curl 下载
+curl -s -o "${DIR}/original/full.html" "<url>"
 ```
 
-**关键**：必须使用 `format: html` 而非 `format: markdown`，因为：
-- `markdown` 格式会丢失图片 URL
-- `html` 格式保留完整的 `<img>` 标签和内嵌 `<svg>` 元素
+**⚠️ 注意**：不要使用简化版 HTML！必须是包含所有 `<svg>` 标签的完整页面 HTML。
 
----
+**步骤 C：从 HTML 提取图片 URL 并下载**
 
-**步骤 B：从 HTML 提取图片 URL 并下载**
-
-**B1：提取 `<img>` 标签中的图片 URL**
-
-使用 Grep 从 HTML 中提取所有图片 URL：
+- C1：提取 `<img>` 标签中的图片 URL（排除 base64 内联图片、1x1 追踪像素）
+- C2：下载图片到 images/ 目录
+- C3：webp 格式转换为 png（公众号不支持 webp）
 
 ```bash
-# 正则匹配 <img> 标签的 src 属性
-# 支持的格式：.jpg, .jpeg, .png, .gif, .webp, .svg
-# 排除：base64 内联图片（data:image）、广告追踪像素（1x1 像素）
-```
-
-**提取规则**：
-- 匹配 `<img ... src="URL" ...>` 格式
-- 支持相对路径（自动转为绝对路径）
-- 过滤掉 `data:image` 开头的 base64 图片
-- 过滤掉宽度或高度 ≤ 1 像素的追踪像素
-
-**B2：下载图片到 images/ 目录**
-
-```bash
-# Windows PowerShell 示例
-Invoke-WebRequest -Uri "<图片URL>" -OutFile "${DIR}/images/<文件名>.png"
-
-# 文件命名规则：
-# - 优先使用 URL 最后一段作为文件名
-# - 如 URL 无明确文件名，使用 img-1.png, img-2.png... 递增命名
-```
-
-**B3：处理 webp 格式（公众号不支持）**
-
-```bash
-# 如果下载的图片是 .webp 格式，必须转换为 .png
-# 使用 Python PIL 转换
+# webp 转 png
 .venv/Scripts/python -c "
 from PIL import Image
 img = Image.open('${DIR}/images/<文件名>.webp')
@@ -341,117 +214,68 @@ img.save('${DIR}/images/<文件名>.png', 'PNG')
 "
 ```
 
----
+**步骤 D：提取内嵌 SVG 并转 PNG**
 
-**步骤 C：提取内嵌 SVG 并转 PNG**
-
-许多技术博客的架构图、流程图是以内嵌 `<svg>` 元素嵌入 HTML 的（而非 `<img src="xxx.svg">` 引用），需要单独处理：
+使用步骤 B 保存的完整 HTML 文件：
 
 ```bash
-# 使用 extract-svg.ts 提取内嵌 SVG → 替换 CSS 变量 → 转 PNG
 bun run .agents/skills/wechat-copywriter/scripts/extract-svg.ts \
-  <html_content_file> \
-  ${DIR}/images \
+  "${DIR}/original/full.html" \
+  "${DIR}/images" \
   --prefix arch
 ```
 
-**处理流程**：
-1. 用 cheerio 以 DOM 方式提取所有 `<svg>` 元素（容错处理不规范 HTML，正确处理嵌套 SVG）
-2. 从页面 `<style>` 和内联样式中提取 CSS 变量定义（`--c-xxx: #ccc`）
-3. 将 `var(--c-xxx)` 替换为实际颜色值
-4. 在 DOM 层面添加白色背景 + 中文字体声明 + 显式 width/height，确保渲染正确
-5. 用 `sharp` 将每个 SVG 转为 PNG（白底，无损）
-6. 保存到 `${DIR}/images/` 目录，命名为 `arch-1.png`, `arch-2.png`...
+处理流程：提取 `<svg>` 元素 → 替换 CSS 变量 → 添加白色背景 + 中文字体 → 用 sharp 转 PNG
 
-**输出 JSON 格式**（stdout）：
-```json
-{
-  "totalSVGs": 6,
-  "converted": 6,
-  "skipped": 0,
-  "files": [
-    {"name": "arch-1.png", "width": 800, "height": 350, "sizeKB": 28.4}
-  ],
-  "errors": []
-}
-```
+输出 JSON 格式（stdout）：`{ totalSVGs, converted, skipped, files: [{name, width, height}], errors: [] }`
 
-**跳过规则**：
-- SVG 内文本内容少于 2 字符的（纯装饰性元素）自动跳过
-- 已有 `<img src="*.svg">` 引用的不重复处理
+**步骤 E：更新 article.md 图片引用**
 
-**失败处理**：渲染失败的 SVG 会将清洗后的 SVG 保存为 `arch-<n>.svg`（调试用），错误信息计入 stdout JSON 的 `errors` 字段，不影响其他 SVG 转换。
+在 `article.md` 的相应位置添加图片引用，确保图文对应：
 
----
+**1. 分析图片类型和位置**
+- **外部图片**（jpg/png/webp）：通常是文章配图、截图、示意图
+- **内嵌 SVG 转换图**（arch-N.png）：通常是架构图、流程图、图表
 
-**步骤 D：更新 article.md 图片引用**
+**2. 确定图片插入位置**
+- **架构图/流程图**：放在介绍相应概念的段落之后
+- **示例图**：放在代码示例或说明之后
+- **截图**：放在相关功能介绍之后
+- **数据图表**：放在数据分析或结论之前
 
-将下载的图片路径替换到 article.md 中，确保图片能正确显示：
+**3. 编写图片描述**
+- 优先使用原始 HTML 中的 `alt` 文本
+- 如果没有 `alt` 文本，编写简洁准确的中文描述
+- 描述应概括图片内容，帮助读者理解
 
+**4. 添加图片引用**
+在 `article.md` 的相应位置添加：
 ```markdown
-# 在对应位置添加图片引用
-![图片描述](images/filename.png)
-
-# 对于内嵌 SVG 转换的图片，添加描述性 alt 文本
-![LangGraph 核心架构](images/arch-1.png)
+![图片描述](images/文件名.png)
 ```
 
-**图片插入位置建议**：
-- `<img>` 图片：保持原文位置
-- 内嵌 SVG：插入到对应章节的标题之后或段落之间
+**示例**：
+```markdown
+LangChain 的核心组件包括模型接口、提示词模板、链、记忆、检索和代理。
 
----
+![LangChain 架构图](images/536b7d75-c1a2-4b0e-a28f-92e029fa7578.png)
 
-**完整执行流程示例**：
+这些组件通过 LCEL 语法连接...
 
-```python
-# 伪代码示例
-def fallback_fetch(url, dir):
-    # 步骤 A: 获取 HTML
-    html_content = webfetch(url, format="html")
-    save_to_file(html_content, f"{dir}/original/raw.html")
-    
-    # 步骤 B: 提取并下载 <img> 图片
-    img_urls = extract_img_urls(html_content)
-    for i, img_url in enumerate(img_urls):
-        filename = get_filename_from_url(img_url) or f"img-{i+1}.png"
-        download(img_url, f"{dir}/images/{filename}")
-        if filename.endswith(".webp"):
-            convert_webp_to_png(f"{dir}/images/{filename}")
-    
-    # 步骤 C: 提取内嵌 SVG
-    svg_result = run_extract_svg(f"{dir}/original/raw.html", f"{dir}/images", prefix="arch")
-    
-    # 步骤 D: 更新 article.md 图片引用
-    update_markdown_images(f"{dir}/article.md", img_urls, svg_result.files)
+![LCEL 流程图](images/arch-2.png)
 ```
 
-### 1.3 图片来源优先级
+### 1.3 质量检查
 
-**仅 `抓原图` 模式适用**：
+抓取后检查内容完整性：
 
-| 优先级 | 来源 | 说明 |
-|--------|------|------|
-| 1 | baoyu-url-to-markdown | 首选，自动下载内容+图片+SVG |
-| 2 | webfetch + 图片下载 + SVG 提取 | 降级方案，完整执行步骤 A-D |
-| 3 | 无图片 | 仅保留文字内容 |
-
-**降级方案必须包含的组件**：
-- `<img>` 标签图片下载
-- 内嵌 `<svg>` 提取并转 PNG
-- webp 格式转换为 png（公众号不支持 webp）
-
-### 1.4 质量检查
-
-抓取后检查内容完整性，如发现内容缺失或质量差，尝试使用 `--wait-for interaction` 模式重试。
-
-**检查清单**（按图片模式对应勾选）：
 - [ ] 文章标题是否完整
 - [ ] 正文内容是否丢失
 - `抓原图` 模式额外检查：
-  - [ ] 图片是否全部下载
-  - [ ] 内嵌 SVG 是否已提取并转换为 PNG（如有）
-  - [ ] 图片引用路径是否正确
+  - [ ] 图片是否全部下载（检查 `${DIR}/images/` 目录）
+  - [ ] 完整 HTML 是否已保存（`${DIR}/original/full.html` 应存在且非空）
+  - [ ] 内嵌 SVG 是否已转换为 PNG（运行 `extract-svg.ts` 后检查输出 JSON 的 `converted` 字段）
+  - [ ] 图片引用路径是否正确（article.md 中的图片路径指向实际存在的文件）
 
 ## Step 2: 识别关键概念
 
@@ -469,18 +293,15 @@ def fallback_fetch(url, dir):
 
 ## 核心概念
 - [概念1]：简要说明
-- [概念2]：简要说明
 
 ## 涉及产品
 - [产品名]：官网 URL（如果能识别）
 
 ## 技术术语
 - [术语1]：解释
-- [术语2]：解释
 
 ## 需要补充的信息
 - [ ] 关于 XX 的官方定义
-- [ ] 关于 YY 的最新数据
 ```
 
 ## Step 3: 补充资料
@@ -491,30 +312,9 @@ def fallback_fetch(url, dir):
 2. **交叉校验**：对比博客内容与官方描述，标记差异
 3. **补充权威信息**：从官网提取官方定义、特性说明、数据
 
-**搜索策略**：
-- 产品名 + "official site"
-- 概念名 + "definition" / "是什么"
-- 技术术语 + "documentation"
+**搜索策略**：产品名 + "official site" / 概念名 + "definition" / 技术术语 + "documentation"
 
 **输出**：写入 `${DIR}/sources.md`
-
-```markdown
-# 参考资料来源
-
-## 博客原文
-- 来源：[博客标题](原始URL)
-- 抓取时间：YYYY-MM-DD
-
-## 补充资料
-### [概念1]
-- 官网：https://xxx.com
-- 官方定义：...
-- 与博客对比：[一致/有差异] - 差异说明
-
-### [概念2]
-- 官网：https://yyy.com
-- 官方定义：...
-```
 
 ## Step 4: 重写文章
 
@@ -543,137 +343,121 @@ def fallback_fetch(url, dir):
 - **信息增强**：用官网权威信息补充/修正博客内容
 - **原创表达**：用完全不同的表达方式重写，避免照搬原文句式
 - **风格一致**：全文保持指定风格的语气和结构
+- **图片保留**：保留原文章的关键图片，在重写的文章中相应位置添加图片引用
 
-**重写检查清单**：
-- [ ] 核心观点是否保留
-- [ ] 信息是否准确（与官网一致）
-- [ ] 是否有原创表达（非照搬原文）
-- [ ] 风格是否统一
-- [ ] 图片引用是否正确
+**图片处理要点**：
+
+1. **分析原文章图片**：查看 `original/full.html` 或原始 markdown，识别所有图片及其位置
+2. **筛选关键图片**：选择对文章理解有帮助的图片（架构图、流程图、示例图等）
+3. **确定插入位置**：根据图片内容，在重写的文章中找到合适的插入点
+4. **编写图片描述**：使用原始 `alt` 文本或编写新的简洁描述
+5. **添加图片引用**：在相应位置添加 `![描述](images/文件名.png)`
+
+**注意**：Step 4 生成的 `article.md` 应包含图片引用，Step 5 会进一步处理图片排版。
 
 ### 4.3 去 AI 味（可选）
 
-如果未指定 `--no-humanize`，调用 `humanizer-zh` 处理：
+如果未指定 `--no-humanize`，调用 `humanizer-zh` 处理。
 
-```bash
-# 使用 humanizer-zh 去除 AI 写作痕迹
-# 读取 article.md，去除夸大象征意义、三段式法则、AI 词汇等
-```
-
-**注意**：纪实叙事、口语唠嗑、玩梗沙雕风格可能不需要去 AI 味，因为它们本身就偏口语化。
-
-### 4.4 配图提示词（可选）
-
-如需 AI 重新生成配图（而非使用原图），生成配图提示词到 `image-prompts.md`。
-
-> **AI 配图模式**：配图提示词统一在 Step 5.4 生成（含 `baoyu-article-illustrator` 分析），此处无需重复。
+**注意**：纪实叙事、口语唠嗑、玩梗沙雕风格可能不需要去 AI 味。
 
 ## Step 5: 图片排版
 
 ### 5.1 封面图生成（必须）
 
-每篇文章都需要封面图。调用 `baoyu-cover-image` 技能，根据文章标题和核心观点生成封面图：
-
-1. 分析文章标题和核心观点，确定封面图主题
-2. 调用 `baoyu-cover-image` 生成封面（默认参数）：
-   - `--type hero` — 视觉冲击力强
-   - `--aspect 16:9` — 公众号封面比例
-   - `--text title-only` — 标题文字叠加
-   - `--lang zh` — 中文标题
-   - `--quality normal` — 无需高清，节省生成时间
-   - `--quick` — 跳过确认，使用自动选择
-3. 封面图保存为 `${DIR}/images/cover.png`
-4. 在 `article.md` frontmatter 中添加 `cover: images/cover.png`
+每篇文章都需要封面图。调用 `baoyu-cover-image` 技能：
 
 ```bash
-# 生成封面图（由 baoyu-cover-image 内部调用 baoyu-image-gen 生图）
-# 保存到 images/cover.png
+# 生成封面图（默认参数）
+# --type hero --aspect 16:9 --text title-only --lang zh --quality normal --quick
+# 保存到 ${DIR}/images/cover.png
 ```
 
 ### 5.2 封面图压缩（必须）
-
-封面图生成后，**必须**调用 `baoyu-compress-image` 压缩，确保公众号上传不超限：
 
 ```bash
 bun run .agents/skills/baoyu-compress-image/scripts/main.ts \
   ${DIR}/images/cover.png
 ```
 
-- 压缩后默认输出 WebP 格式（体积更小，公众号兼容）
-- 如需保留 PNG 格式，追加 `-f png --keep`
-
 ### 5.3 引用原图（仅 `抓原图` 模式）
 
 **`AI配图` 模式跳过本步，直接进入 5.4。**
 
-将 Step 1 下载的博客原图复制到 `images/` 目录，在 `article.md` 中引用：
+将 Step 1 下载的博客原图和 SVG 转换图在 `article.md` 中引用：
+
+**1. 图片位置规则**
+
+| 图片类型 | 推荐位置 | 说明 |
+|---------|---------|------|
+| 架构图/流程图 | 介绍相应概念的段落之后 | 帮助读者理解抽象概念 |
+| 示例图 | 代码示例或说明之后 | 直观展示代码效果 |
+| 截图 | 相关功能介绍之后 | 展示实际界面或操作 |
+| 数据图表 | 数据分析或结论之前 | 支撑论点 |
+| 封面图 | 文章开头（自动添加） | 由 `baoyu-cover-image` 生成 |
+
+**2. 图片描述规则**
+
+- 优先使用原始 HTML 中的 `alt` 文本
+- 如果没有 `alt` 文本，编写简洁准确的中文描述
+- 描述应概括图片内容，帮助读者理解
+- 避免过长的描述，保持简洁
+
+**3. 图片引用格式**
 
 ```markdown
-![图片描述](images/filename.jpg)
+![图片描述](images/文件名.png)
 ```
 
-**图片来源优先级**：
-1. 博客原图（Step 1 下载的 `original/images/`）— 默认使用
-2. 补充生成的配图（Step 5.4 生成）— 原图不足时补充
+**4. 示例：多张图片的排列**
+
+```markdown
+## LangChain 的核心组件
+
+LangChain 把构建 AI 应用需要的组件分成了六大类：
+
+![LangChain 组件架构图](images/arch-1.png)
+
+### 1. 模型接口（Models）
+
+这是最基础的部分...
+
+### 2. 提示词模板（Prompts）
+
+光有大脑还不够...
+
+![LCEL 流程图](images/arch-2.png)
+
+LCEL 使用管道符连接各组件...
+```
 
 ### 5.4 文内配图（按图片模式）
 
-**按 `{图片模式}` 走对应分支：**
-
 #### `抓原图` 模式：AI 补充配图（可选）
 
-当原博客图片数量不足（少于 2 张）或缺少关键段落配图时，调用 AI 补充生成：
+当原博客图片数量不足（少于 2 张）或缺少关键段落配图时：
 
-**触发条件**：
-- 原博客图片 < 2 张
-- 文章有 3 个以上主要段落但仅有 1 张配图
-
-**执行流程**：
-1. 调用 `baoyu-article-illustrator` 分析文章结构，识别需要配图的位置
+1. 调用 `baoyu-article-illustrator` 分析文章结构
 2. 确定每张图的 Type × Style × Palette 三维度
 3. 调用 `baoyu-image-gen` 批量生成补充配图（Provider 优先级：openai → dashscope → google）
-4. 图片保存到 `images/` 目录，更新 `article.md` 中的图片引用
-
-**要求**：
-- 补充配图风格应与封面图保持一致（可用封面图作为 `--ref` 锚定风格）
-- 文内配图使用 `--quality normal`，比例 `--ar 16:9` 或 `--ar 1:1`
-- 至少生成 1 张补充配图
+4. 图片保存到 `images/` 目录，更新 `article.md`
 
 #### `AI配图` 模式：AI 生成全部配图（必须）
 
-**文章没有可用原图，全部文内配图由 AI 生成**，流程参考 `wechat-auto-creator` 的 Step 5：
+**文章没有可用原图，全部文内配图由 AI 生成**：
 
-1. **文内配图分析**：调用 `baoyu-article-illustrator` 技能
-   - 分析文章结构，识别需要配图的位置（每个主要段落 1 张）
-   - 确定每张图的 Type × Style × Palette 三维度
-   - 配图提示词写入 `image-prompts.md`，保存到 `${DIR}/image-prompts.md`
-2. **批量生图**：调用 `baoyu-image-gen` 批量生成
-   - Provider 优先级（依次尝试，失败自动回退）：`openai`（gpt-image-2）→ `dashscope`（通义万象）→ `google`（Gemini）
-   - 封面图 `--quality normal`、`--ar 16:9`；文内图 `--quality normal`、`--ar 16:9` 或 `--ar 1:1`
-   - **至少生成 2 张文内图**（1 张封面 + 至少 2 张文内图）
-   - 文内图用封面图作为 `--ref` 锚定风格一致性
-3. 图片保存到 `${DIR}/images/` 目录
-4. 生图完成后将 `article.md` 中的图片占位符替换为实际图片路径
-
-**要求**：
-- 文内配图风格必须与封面图保持一致（用封面图作为 `--ref`）
-- 每张配图在正文中找到合适位置插入（每段后），确保图文对应
-- 若某个 Provider 全部失败，依次回退；全部失败则用占位符 `![描述](images/{filename})` 标记，供用户手工补图
+1. 调用 `baoyu-article-illustrator` 分析文章结构，识别需要配图的位置
+2. 配图提示词写入 `${DIR}/image-prompts.md`
+3. 调用 `baoyu-image-gen` 批量生成（至少 2 张文内图）
+4. 图片保存到 `${DIR}/images/` 目录，替换 `article.md` 中的占位符
 
 ### 5.5 图片压缩（可选）
 
-如需压缩文内图片（单张 > 500KB），调用 `baoyu-compress-image`：
-
-```bash
-bun run .agents/skills/baoyu-compress-image/scripts/main.ts \
-  ${DIR}/images/filename.jpg
-```
+如需压缩文内图片（单张 > 500KB），调用 `baoyu-compress-image`。
 
 ## Step 6: 输出成品
 
 ### 6.1 转换 HTML
-
-调用 `baoyu-markdown-to-html` 生成公众号兼容 HTML：
 
 ```bash
 bun run .agents/skills/baoyu-markdown-to-html/scripts/main.ts \
@@ -684,81 +468,56 @@ bun run .agents/skills/baoyu-markdown-to-html/scripts/main.ts \
 
 ### 6.2 最终输出
 
-**目录命名规则**：`{YYYYMMDD_标题简称}`
-- `YYYYMMDD`：当天日期，如 `20260802`
-- `标题简称`：从文章标题提取 2-6 个关键词，如 `Claude使用技巧`
-
-示例：`20260802_Claude使用技巧`
-
 ```
 00-草稿/20260802_Claude使用技巧/
 ├── article.md              # Markdown 源文件
 ├── article.html            # 公众号兼容 HTML
 ├── image-prompts.md        # 配图提示词（AI 配图模式必须有）
 ├── images/                 # 图片目录
-│   ├── cover.png           # 封面图（baoyu-cover-image 生成）
+│   ├── cover.png           # 封面图
 │   ├── image1.jpg          # 博客原图（抓原图模式）
 │   ├── arch-1.png          # 内嵌 SVG 转换（抓原图模式，如有）
-│   └── image2.png          # AI 生成配图（AI 配图模式 / 补充配图）
-├── original/               # 原始抓取内容（可删除）
+│   └── image2.png          # AI 生成配图
+├── original/               # 原始抓取内容
 │   ├── article.md
 │   └── images/             # 抓原图模式才有下载的图片
 ├── sources.md              # 参考资料来源
 └── concepts.md             # 关键概念提取
 ```
 
-> **两种图片模式的结构差异**：
-> - `抓原图`：`original/images/` 有下载的博客图片，`images/` 以原图为主
-> - `AI配图`：`original/images/` 为空（未下载图片），`images/` 全部为 AI 生成配图，`image-prompts.md` 必须有
-
 ## Step 7: 发布到公众号草稿箱
 
 ### 7.1 发布前确认
 
-在发布前，**必须**交互式询问用户是否确认发布：
+在发布前，使用 `AskUserQuestion` 询问用户是否确认发布：
 
-```
-文章已生成完毕！
-
-标题：{文章标题}
-风格：{指定风格}
-目录：${DIR}/
-
-是否发布到微信公众号草稿箱？
-```
-
-使用 `AskUserQuestion` 工具询问用户：
 - **确认发布**：继续执行发布流程
 - **修改文章**：返回 Step 4 修改文章内容
 - **取消发布**：结束流程，保留本地文件
 
 ### 7.2 执行发布
 
-用户确认后，**优先使用 API 方式**发布到公众号草稿箱。
-
-**API 方式优先**：检测 `.baoyu-skills/.env` 中是否存在 `WECHAT_APP_ID` + `WECHAT_APP_SECRET`，有则直接走 API：
+**API 方式优先**：检测 `.baoyu-skills/.env` 中是否存在 `WECHAT_APP_ID` + `WECHAT_APP_SECRET`：
 
 ```bash
-# API 方式（首选 — 无需打开浏览器，静默发布）
+# API 方式（首选）
 bun run .agents/skills/baoyu-post-to-wechat/scripts/wechat-api.ts \
   ${DIR}/article.html \
   --theme {theme}
 ```
 
-**浏览器备用**：API 不可用时（缺少凭证或 API 调用失败），告知用户，经同意后走浏览器方式：
+**浏览器备用**：API 不可用时，告知用户，经同意后走浏览器方式：
 
 ```bash
-# 浏览器方式（需手动操作，自动打开公众号后台）
+# 浏览器方式
 bun run .agents/skills/baoyu-post-to-wechat/scripts/wechat-article.ts \
   --markdown ${DIR}/article.md \
   --theme {theme}
 ```
 
-**自动发布模式**（`--publish`）：直接调用 API 发布，不打断确认。API 不可用时报错停止，不回退浏览器方式（避免意外打开浏览器）。
+**自动发布模式**（`--publish`）：直接调用 API 发布，不打断确认。API 不可用时报错停止。
 
 ### 7.3 发布结果反馈
-
-发布完成后，向用户反馈结果：
 
 **成功**：
 ```
@@ -782,22 +541,6 @@ media_id: {media_id}
 是否重试？
 ```
 
-### 7.4 可选参数
-
-| 参数 | 说明 | 默认值 |
-|------|------|--------|
-| `--publish` | 跳过确认直接发布（API 模式） | `false` |
-| `--dry-run` | 仅生成不发布 | `false` |
-
-示例：
-```bash
-# 直接发布（跳过确认）
-/wechat-copywriter https://xxx.blog --publish
-
-# 仅生成不发布
-/wechat-copywriter https://xxx.blog --dry-run
-```
-
 ## 风格速查
 
 | 风格 | 语气 | 结构 | 适用场景 |
@@ -817,19 +560,18 @@ media_id: {media_id}
 ```
 0. [参数解析] 提取URL、交互式选择风格、询问是否抓图 → 确定输入参数 + 图片模式
 1. baoyu-url-to-markdown     → 抓取内容（抓原图模式含下载图片）
-   └─ [降级] webfetch        → 获取 HTML + 下载图片 + extract-svg.ts 提取内嵌 SVG
-2. [extract-svg.ts]          → 内嵌 SVG 转 PNG（仅抓原图模式，降级方案已包含）
-3. [手动] 提取关键概念       → 分析内容
-4. [WebSearch] 补充资料      → 搜索官网
-5. [手动] 融合重写           → 创作文章
-6. humanizer-zh              → 去 AI 味（可选）
-7. baoyu-cover-image         → 生成封面图
-8. baoyu-compress-image      → 压缩封面图
-9. baoyu-article-illustrator → 文内配图分析（AI 配图模式必选）
-10. baoyu-image-gen          → 生成配图（抓原图模式补充 / AI 配图模式全部生成）
-11. baoyu-compress-image     → 压缩文内图（可选）
-12. baoyu-markdown-to-html   → 转 HTML
-13. baoyu-post-to-wechat     → 发布到草稿箱
+   └─ [降级] webfetch        → 获取 HTML → 保存完整HTML到文件 → 下载图片 → extract-svg.ts 提取内嵌 SVG
+2. [手动] 提取关键概念       → 分析内容
+3. [WebSearch] 补充资料      → 搜索官网
+4. [手动] 融合重写           → 创作文章
+5. humanizer-zh              → 去 AI 味（可选）
+6. baoyu-cover-image         → 生成封面图
+7. baoyu-compress-image      → 压缩封面图
+8. baoyu-article-illustrator → 文内配图分析（AI 配图模式必选）
+9. baoyu-image-gen           → 生成配图（抓原图模式补充 / AI 配图模式全部生成）
+10. baoyu-compress-image     → 压缩文内图（可选）
+11. baoyu-markdown-to-html   → 转 HTML
+12. baoyu-post-to-wechat     → 发布到草稿箱
 ```
 
 ## 注意事项
@@ -837,21 +579,10 @@ media_id: {media_id}
 - 本技能是**编排器**，调度已有子技能完成工作流
 - 每个步骤的输出是下一个步骤的输入
 - 用户可在步骤之间介入（如修改重写内容、调整风格）
-- **封面图**：每篇文章必须生成封面图（baoyu-cover-image），保存到 `images/cover.png`
-- **图片模式**：Step 0.4 交互式询问用户是否抓取博客图片；`--no-images` 参数可跳过询问直接走 AI 配图模式
-  - `抓原图`：Step 1 下载图片 + 内嵌 SVG 转 PNG，Step 5 优先复用原图
-  - `AI配图`：Step 1 仅抓文本，Step 5 全部由 AI 生成配图（参考 wechat-auto-creator Step 5 流程）
-- **内嵌 SVG**：网页中内嵌的架构图/流程图（`<svg>` 元素）会自动提取并转为 PNG（仅抓原图模式），处理过程包括 CSS 变量替换、白色背景添加、中文字体渲染
-- **降级方案（webfetch）**：当 baoyu-url-to-markdown 失败时，必须执行完整步骤 A-D：
-  - 步骤 A：获取 HTML（必须用 `format: html`）
-  - 步骤 B：提取 `<img>` 标签 URL 并下载，webp 转 png
-  - 步骤 C：使用 extract-svg.ts 提取内嵌 SVG 并转 PNG
-  - 步骤 D：更新 article.md 中的图片引用
+- **图片模式**：`抓原图` 模式下 Step 1 下载图片 + 内嵌 SVG 转 PNG，Step 5 优先复用原图；`AI配图` 模式下 Step 1 仅抓文本，Step 5 全部由 AI 生成
+- **内嵌 SVG**：网页中内嵌的架构图/流程图会自动提取并转为 PNG（仅抓原图模式）。注意：一篇博客可能同时包含内嵌 SVG 和外部图片（如 webp/png/jpg），两种格式都会被处理
 - **webp 格式问题**：公众号不支持 webp 格式图片，下载的 webp 必须转换为 png
-- **文内配图**：抓原图模式默认复用博客原图，原图不足时补充生成；AI 配图模式全部由 baoyu-image-gen 生成（至少 2 张文内图）
 - 风格规范在 `references/styles/` 目录下，可按需扩展
-- **风格选择**：未指定 `--style` 时必须交互式询问，默认选择「生动科普」
 - **发布前必须确认**：Step 7 会交互式询问用户是否确认发布，除非指定 `--publish` 参数
-- **发布方式**：API 优先（有 `WECHAT_APP_ID` + `WECHAT_APP_SECRET` 时走 API），API 不可用时提示用户切换浏览器方式
-- **自动发布模式**（`--publish`）：直接调用 API 发布，不打断确认；API 不可用时报错停止，不回退浏览器方式
+- **发布方式**：API 优先（有凭证时走 API），API 不可用时提示用户切换浏览器方式
 - **草稿箱**：发布到公众号草稿箱，用户需登录后台手动发布
