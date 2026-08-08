@@ -130,7 +130,7 @@ Environment variables:
   OPENAI_IMAGE_MODEL        Default OpenAI model (gpt-image-2)
   OPENROUTER_IMAGE_MODEL    Default OpenRouter model (google/gemini-3.1-flash-image)
   GOOGLE_IMAGE_MODEL        Default Google model (gemini-3-pro-image)
-  DASHSCOPE_IMAGE_MODEL     Default DashScope model (qwen-image-2.0-pro)
+  DASHSCOPE_IMAGE_MODEL     Default DashScope model (qwen-image-3.0-pro)
   ZAI_IMAGE_MODEL           Default Z.AI model (glm-image)
   BIGMODEL_IMAGE_MODEL      Backward-compatible alias for Z.AI model (glm-image)
   MINIMAX_IMAGE_MODEL       Default MiniMax model (image-01)

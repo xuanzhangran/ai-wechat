@@ -256,7 +256,7 @@ bun run .agents/skills/baoyu-post-to-wechat/scripts/wechat-article.ts \
 
 ```
 openai (gpt-image-2)
-  → 失败 → dashscope (qwen-image-2.0-pro 或 wan2.7-image-pro)
+  → 失败 → dashscope (qwen-image-3.0-pro 或 wan2.7-image-pro)
     → 失败 → google (gemini-3-pro-image)
       → 失败 → 报告用户，在 article.md 中以占位符 `![描述](images/{filename})` 标记位置，供用户手工补图
 ```

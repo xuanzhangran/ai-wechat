@@ -266,10 +266,10 @@ options:
 header: "DashScope Model"
 question: "Choose a default DashScope image generation model?"
 options:
-  - label: "qwen-image-2.0-pro (Recommended)"
+  - label: "qwen-image-3.0-pro (Recommended)"
     description: "Best DashScope model for text rendering and custom sizes"
-  - label: "qwen-image-2.0"
-    description: "Faster 2.0 variant with flexible output size"
+  - label: "qwen-image-3.0"
+    description: "Faster 3.0 variant with flexible output size"
   - label: "qwen-image-max"
     description: "Legacy Qwen model with five fixed output sizes"
   - label: "qwen-image-plus"
@@ -286,7 +286,7 @@ options:
 
 Notes for DashScope setup:
 
-- Prefer `qwen-image-2.0-pro` when the user needs custom `--size`, uncommon ratios like `21:9`, or strong Chinese/English text rendering.
+- Prefer `qwen-image-3.0-pro` when the user needs custom `--size`, uncommon ratios like `21:9`, or strong Chinese/English text rendering.
 - `qwen-image-max` / `qwen-image-plus` / `qwen-image` only support five fixed sizes: `1664*928`, `1472*1104`, `1328*1328`, `1104*1472`, `928*1664`.
 - `wan2.7-image-pro` and `wan2.7-image` are the only DashScope models that accept `--ref`. Pick one of these when the user wants reference-image editing or multi-image fusion via DashScope.
 - In `baoyu-image-gen`, `quality` is a compatibility preset. It is not a native DashScope parameter.
